@@ -1,0 +1,30 @@
+---
+description: Never add Cursor Co-authored-by to git commits
+alwaysApply: true
+---
+
+# Git commits: no Cursor co-author
+
+- **Never** put `Co-authored-by: Cursor` (or any Cursor / cursoragent trailer) in commit messages.
+- When creating commits, use only the real author identity already configured for this repo.
+- If a commit message template or tool injects a Cursor co-author line, **strip it before committing**.
+- Do **not** use `git commit --amend` solely to add Cursor attribution.
+- Prefer: `git commit -F <msgfile>` where the file has no Cursor trailer.
+
+## Bad
+
+```
+Release 0.4.1: fix Flash Search page load.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+```
+
+## Good
+
+```
+Release 0.4.1: fix Flash Search page load.
+
+Remove invalid Md3TextField onEditingFinished handler that prevented the page from loading.
+```
+
+Repo hooks under `.githooks/` strip/reject Cursor co-author trailers. After clone: `git config core.hooksPath .githooks`

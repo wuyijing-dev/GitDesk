@@ -1,0 +1,33 @@
+{
+  "name": "GitDesk",
+  "version": "0.1.0",
+  "buildDate": "2026-08-03",
+  "channel": "release",
+  "organization": "wuyijing-dev",
+  "author": "wuyijing",
+  "summary": "现代化 Git 可视化工作台 — Material Design 3 · Qt Quick",
+  "about": {
+    "tagline": "把 Git 变成可操作的软件工程地图",
+    "description": "GitDesk 面向开发者的 Git 客户端：分支可视化、Commit 历史、Diff、多仓库工作流，基于 Qt 6 与 Md3 组件库。",
+    "highlights": [
+      "IDE 风格布局：资源树 · Graph · Changes · History",
+      "异步 Git 操作，避免 UI 卡顿",
+      "Md3 深色主题与命令面板",
+      "中英文界面；版本信息由 version.json 驱动"
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-08-03",
+      "title": "首个可用版本",
+      "changes": [
+        { "type": "feature", "text": "打开仓库、分支切换、Fetch/Pull/Push、暂存与提交" },
+        { "type": "feature", "text": "Overview / Graph / Changes / History 工作区" },
+        { "type": "feature", "text": "设置页：主题、密度、Commit 模板、git 路径" },
+        { "type": "feature", "text": "中英文切换；version.json 版本与关于信息" },
+        { "type": "improve", "text": "Git 操作线程池异步，不阻塞界面" }
+      ]
+    }
+  ]
+}

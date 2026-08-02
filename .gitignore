@@ -1,0 +1,6 @@
+/build*/
+/Md3/
+CMakeLists.txt.user
+*.user
+*.autosave
+.qtcreator/

@@ -1,0 +1,32 @@
+---
+description: Prefer Md3 components when suitable; hand-write when not
+globs: "**/*.{qml,cpp,h}"
+alwaysApply: false
+---
+
+# Md3 组件选用原则
+
+UI 能用 Md3 组件库就用；**不适合就手写**，不要为了“全量组件化”硬套。
+
+## 适合用组件库
+
+- 滚动容器 → `Md3ScrollView`（不要裸 `Flickable` / Qt `ScrollView`）
+- 按钮、开关、复选、分段、路径、进度、空状态、Snackbar/Banner/InfoBar
+- 布局 → `Md3VStack` / `Md3HStack` / `Md3FlowLayout` / `Md3PageSection`
+- **结构化多列数据、可筛选/分页/行操作** → `Md3DataTable`  
+  例：已联接记录、大文件结果、重复文件、闪搜结果
+- 搜索入口 → `Md3SearchBar`；筛选 chip 组 → `Md3ChipGroup`
+- 卡片容器 → `Md3Card`（`clickable: false` 若内部有独立 hit 目标）
+
+## 不适合硬套（保持手写或轻量组合）
+
+- **可点击推荐/操作列表** → `Repeater` + `Md3ListTile`（不要用 DataTable）  
+  例：联接搬家「推荐可搬目录」
+- **PageHeader 尾部按钮行** → 用普通 `Row`（`default property alias` 必须进 `.data`）；不要用 `Md3HStack` 当 default 宿主（其 default 是 `content`，子项会丢出布局）
+- **专用可视化**（TreeMap、自定义 canvas）→ 手写；周围 chrome 仍用 Md3
+- 复杂业务卡片（清理类别等）→ 可用 `Md3Card` + `Md3Checkbox` 组合，不必强行塞进 DataTable
+- `QAbstractListModel` 驱动的长列表且需虚拟化、自定义 delegate → 可用原生 `ListView`，外层/子项仍用 Md3
+
+## 自检
+
+改 UI 前问一句：换成某 Md3 组件后，交互是否更清晰？若表格反而妨碍“点一下选中并填入”，就用手写列表。

@@ -28,7 +28,7 @@ Item {
             spacing: 16
 
             Md3Text {
-                text: qsTr("Overview")
+                text: qsTr("概览")
                 role: Md3Text.TitleLarge
             }
             Md3Text {
@@ -48,27 +48,27 @@ Item {
                 spacing: 12
 
                 StatCard {
-                    label: qsTr("Commits")
+                    label: qsTr("提交")
                     value: String(GitDeskApp.commitCount)
                     icon: "commit"
                 }
                 StatCard {
-                    label: qsTr("Branches")
+                    label: qsTr("分支")
                     value: String(GitDeskApp.branchCount)
                     icon: "call_split"
                 }
                 StatCard {
-                    label: qsTr("Tags")
+                    label: qsTr("标签")
                     value: String(GitDeskApp.tagCount)
                     icon: "sell"
                 }
                 StatCard {
-                    label: qsTr("Contributors")
+                    label: qsTr("贡献者")
                     value: String(GitDeskApp.contributorCount)
                     icon: "groups"
                 }
                 StatCard {
-                    label: qsTr("Changes")
+                    label: qsTr("变更")
                     value: String(GitDeskApp.changedFileCount)
                     icon: "difference"
                     accent: Md3Theme.colorScheme.error

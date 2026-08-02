@@ -67,38 +67,43 @@ bool LocaleController::installAppTranslator(const QString &normalized)
     };
 
     for (const QString &path : candidates) {
-        if (!QFile::exists(path) && !path.startsWith(QLatin1String(":/")))
+        // QFile::exists works for :/ resources too
+        if (!QFile::exists(path))
             continue;
         if (m_translator.load(path)) {
             app->installTranslator(&m_translator);
             return true;
         }
+        qWarning("LocaleController: failed to load %s", qPrintable(path));
     }
 
     qWarning("LocaleController: gitdesk_en.qm not found — English UI strings stay Chinese source");
-    return true; // still switch Md3 / locale
+    return false;
 }
 
 bool LocaleController::apply(const QString &languageCode)
 {
     const QString normalized = normalize(languageCode);
-    installAppTranslator(normalized);
-
+    const bool ok = installAppTranslator(normalized);
     const bool changed = (m_language != normalized);
     m_language = normalized;
+    ++m_revision;
 
     QLocale::setDefault(QLocale(normalized == QLatin1String("en-US")
                                     ? QStringLiteral("en_US")
                                     : QStringLiteral("zh_CN")));
 
     if (m_engine) {
+        // Prefer BCP-47 tags that match Qt Quick translation lookup
         m_engine->setUiLanguage(normalized == QLatin1String("en-US")
-                                    ? QStringLiteral("en")
-                                    : QStringLiteral("zh-CN"));
+                                    ? QStringLiteral("en_US")
+                                    : QStringLiteral("zh_CN"));
         m_engine->retranslate();
     }
 
-    if (changed)
-        emit languageChanged();
+    emit languageChanged(); // always — drives QML bindings that depend on revision
+    if (!ok && normalized == QLatin1String("en-US"))
+        qWarning("LocaleController: English pack missing; UI may stay Chinese");
+    Q_UNUSED(changed)
     return true;
 }

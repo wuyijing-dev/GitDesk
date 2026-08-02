@@ -12,7 +12,7 @@ Md3VStack {
     Md3Card {
         width: parent.width
         visible: GitDeskApp.selectedCommitId.length > 0
-        title: qsTr("Commit")
+        title: qsTr("提交")
         subtitle: GitDeskApp.selectedCommit.shortId || ""
         variant: Md3Card.Filled
         layoutMode: Md3ContainerBody.Fit
@@ -22,7 +22,7 @@ Md3VStack {
             spacing: Md3Theme.spacingSm
 
             Md3Text {
-                text: qsTr("Author")
+                text: qsTr("作者")
                 role: Md3Text.LabelSmall
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -34,7 +34,7 @@ Md3VStack {
                 width: parent.width
             }
             Md3Text {
-                text: qsTr("Date")
+                text: qsTr("日期")
                 role: Md3Text.LabelSmall
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -43,7 +43,7 @@ Md3VStack {
                 role: Md3Text.BodyMedium
             }
             Md3Text {
-                text: qsTr("Message")
+                text: qsTr("说明")
                 role: Md3Text.LabelSmall
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -54,7 +54,7 @@ Md3VStack {
                 width: parent.width
             }
             Md3Button {
-                text: qsTr("Copy SHA")
+                text: qsTr("复制 SHA")
                 icon: "content_copy"
                 variant: Md3Button.Outlined
                 onClicked: Md3Notify.copy(GitDeskApp.selectedCommitId, { feedback: qsTr("已复制") })
@@ -65,7 +65,7 @@ Md3VStack {
     Md3Card {
         width: parent.width
         visible: GitDeskApp.selectedFilePath.length > 0 && GitDeskApp.selectedCommitId.length === 0
-        title: qsTr("File")
+        title: qsTr("文件")
         subtitle: GitDeskApp.selectedFilePath
         variant: Md3Card.Filled
 
@@ -73,7 +73,7 @@ Md3VStack {
             width: parent.width
             spacing: Md3Theme.spacingSm
             Md3Text {
-                text: GitDeskApp.selectedFileStaged ? qsTr("Staged") : qsTr("Unstaged")
+                text: GitDeskApp.selectedFileStaged ? qsTr("已暂存") : qsTr("未暂存")
                 role: Md3Text.LabelMedium
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -81,13 +81,13 @@ Md3VStack {
                 spacing: Md3Theme.spacingSm
                 Md3Button {
                     visible: !GitDeskApp.selectedFileStaged
-                    text: qsTr("Stage")
+                    text: qsTr("暂存")
                     icon: "add"
                     onClicked: GitDeskApp.stageFile(GitDeskApp.selectedFilePath)
                 }
                 Md3Button {
                     visible: GitDeskApp.selectedFileStaged
-                    text: qsTr("Unstage")
+                    text: qsTr("取消暂存")
                     icon: "remove"
                     variant: Md3Button.Outlined
                     onClicked: GitDeskApp.unstageFile(GitDeskApp.selectedFilePath)
@@ -100,8 +100,8 @@ Md3VStack {
         width: parent.width
         visible: GitDeskApp.selectedCommitId.length === 0 && GitDeskApp.selectedFilePath.length === 0
         icon: "info"
-        title: qsTr("选择 Commit 或文件")
-        body: qsTr("在 Graph / Changes / History 中点击条目")
+        title: qsTr("选择提交或文件")
+        body: qsTr("在图谱 / 变更 / 历史中点击条目")
     }
 
     DiffViewer {

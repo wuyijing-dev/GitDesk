@@ -52,6 +52,22 @@ Item {
                 onClicked: GitDeskApp.pickRepository()
             }
             Md3Button {
+                text: qsTr("克隆仓库")
+                icon: "cloud_download"
+                variant: Md3Button.Outlined
+                onClicked: {
+                    const w = Window.window
+                    if (w && w.openCloneDialog)
+                        w.openCloneDialog()
+                }
+            }
+            Md3Button {
+                text: qsTr("初始化仓库")
+                icon: "create_new_folder"
+                variant: Md3Button.Outlined
+                onClicked: GitDeskApp.pickAndInitRepository()
+            }
+            Md3Button {
                 text: qsTr("设置")
                 icon: "settings"
                 variant: Md3Button.Outlined

@@ -1,5 +1,6 @@
 /build*/
 /Md3/
+.cursor/
 CMakeLists.txt.user
 *.user
 *.autosave

@@ -14,6 +14,7 @@ class LocaleController : public QObject
     QML_UNCREATABLE("Use GitDeskApp.locale")
 
     Q_PROPERTY(QString language READ language NOTIFY languageChanged)
+    Q_PROPERTY(int revision READ revision NOTIFY languageChanged)
     Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)
 
 public:
@@ -22,6 +23,7 @@ public:
     void setEngine(QQmlEngine *engine);
 
     QString language() const { return m_language; }
+    int revision() const { return m_revision; }
     QStringList availableLanguages() const;
 
     Q_INVOKABLE bool apply(const QString &languageCode);
@@ -38,4 +40,5 @@ private:
     QQmlEngine *m_engine = nullptr;
     QTranslator m_translator;
     QString m_language = QStringLiteral("zh-CN");
+    int m_revision = 0;
 };

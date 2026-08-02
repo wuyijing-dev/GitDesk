@@ -53,6 +53,10 @@ class GitDeskApp : public QObject
     Q_PROPERTY(QVariantList projectTree READ projectTree NOTIFY repoChanged)
     Q_PROPERTY(QVariantList recentActivity READ recentActivity NOTIFY repoChanged)
     Q_PROPERTY(QVariantList localBranchNames READ localBranchNames NOTIFY repoChanged)
+    Q_PROPERTY(QVariantList stashes READ stashes NOTIFY repoChanged)
+    Q_PROPERTY(int ahead READ ahead NOTIFY repoChanged)
+    Q_PROPERTY(int behind READ behind NOTIFY repoChanged)
+    Q_PROPERTY(bool hasUpstream READ hasUpstream NOTIFY repoChanged)
 
     Q_PROPERTY(QString selectedCommitId READ selectedCommitId WRITE setSelectedCommitId NOTIFY selectionChanged)
     Q_PROPERTY(QVariantMap selectedCommit READ selectedCommit NOTIFY selectionChanged)
@@ -103,6 +107,10 @@ public:
     QVariantList projectTree() const { return m_cachedProjectTree; }
     QVariantList recentActivity() const { return m_cachedRecentActivity; }
     QVariantList localBranchNames() const { return m_cachedLocalBranches; }
+    QVariantList stashes() const { return m_cachedStashes; }
+    int ahead() const { return m_cachedAhead; }
+    int behind() const { return m_cachedBehind; }
+    bool hasUpstream() const { return m_cachedHasUpstream; }
 
     QString selectedCommitId() const { return m_selectedCommitId; }
     void setSelectedCommitId(const QString &id);
@@ -126,15 +134,27 @@ public:
     Q_INVOKABLE void fetch();
     Q_INVOKABLE void pull();
     Q_INVOKABLE void push();
+    Q_INVOKABLE void pushSetUpstream();
     Q_INVOKABLE void stageFile(const QString &path);
     Q_INVOKABLE void unstageFile(const QString &path);
     Q_INVOKABLE void stageAll();
     Q_INVOKABLE void unstageAll();
+    Q_INVOKABLE void discardFile(const QString &path);
+    Q_INVOKABLE void discardAll();
+    Q_INVOKABLE void stashSave(const QString &message = {});
+    Q_INVOKABLE void stashPop();
+    Q_INVOKABLE void stashDrop(int index);
     Q_INVOKABLE void commit();
     Q_INVOKABLE void checkoutBranch(const QString &name);
     Q_INVOKABLE void createBranch(const QString &name);
     Q_INVOKABLE void deleteBranch(const QString &name, bool force = false);
     Q_INVOKABLE void mergeBranch(const QString &name);
+    Q_INVOKABLE void createTag(const QString &name, const QString &message = {});
+    Q_INVOKABLE void deleteTag(const QString &name);
+    Q_INVOKABLE void cloneRepository(const QString &url, const QString &destDir);
+    Q_INVOKABLE QString pickCloneDirectory();
+    Q_INVOKABLE void initRepository(const QString &path);
+    Q_INVOKABLE QString pickAndInitRepository();
     Q_INVOKABLE void selectChange(const QString &path, bool staged);
     Q_INVOKABLE QString languageForPath(const QString &path) const;
     Q_INVOKABLE void clearRecentRepos();
@@ -196,7 +216,11 @@ private:
     QVariantList m_cachedProjectTree;
     QVariantList m_cachedRecentActivity;
     QVariantList m_cachedLocalBranches;
+    QVariantList m_cachedStashes;
     QVariantMap m_cachedSelectedCommit;
+    int m_cachedAhead = 0;
+    int m_cachedBehind = 0;
+    bool m_cachedHasUpstream = false;
 
     QString m_statusText;
     QString m_busyText;

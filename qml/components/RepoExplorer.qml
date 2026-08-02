@@ -8,6 +8,8 @@ Item {
     clip: true
 
     signal createBranchRequested()
+    signal createTagRequested()
+    signal deleteTagRequested(string name)
 
     Rectangle {
         anchors.fill: parent
@@ -24,7 +26,7 @@ Item {
         stretchChildren: true
 
         Md3Text {
-            text: qsTr("Repository")
+            text: qsTr("仓库")
             role: Md3Text.TitleSmall
         }
         Md3Text {
@@ -93,7 +95,7 @@ Item {
             spacing: Md3Theme.spacingMd
 
             Md3Text {
-                text: qsTr("PROJECT")
+                text: qsTr("项目")
                 role: Md3Text.LabelMedium
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -107,7 +109,7 @@ Item {
             }
 
             Md3Text {
-                text: qsTr("Branches")
+                text: qsTr("分支")
                 role: Md3Text.LabelMedium
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -132,7 +134,7 @@ Item {
             }
 
             Md3Text {
-                text: qsTr("Remote")
+                text: qsTr("远程")
                 role: Md3Text.LabelMedium
                 tone: Md3Text.OnSurfaceVariant
             }
@@ -152,19 +154,29 @@ Item {
                 tone: Md3Text.OnSurfaceVariant
             }
 
-            Md3Text {
-                text: qsTr("Tags")
-                role: Md3Text.LabelMedium
-                tone: Md3Text.OnSurfaceVariant
+            Md3HStack {
+                width: parent.width
+                spacing: Md3Theme.spacingSm
+                Md3Text {
+                    text: qsTr("标签")
+                    role: Md3Text.LabelMedium
+                    tone: Md3Text.OnSurfaceVariant
+                }
+                Md3Spacer { expand: true }
+                Md3IconButton {
+                    icon: "add"
+                    onClicked: root.createTagRequested()
+                }
             }
             Flow {
                 width: parent.width
                 spacing: Md3Theme.spacingXs
                 Repeater {
                     model: GitDeskApp.tags
-                    delegate: Md3AssistChip {
+                    delegate: Md3InputChip {
                         required property var modelData
                         text: String(modelData)
+                        onRemoved: root.deleteTagRequested(String(modelData))
                     }
                 }
             }

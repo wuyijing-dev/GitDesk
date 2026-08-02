@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(GitDesk VERSION 0.1.0 LANGUAGES CXX)
+project(GitDesk VERSION 0.2.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,6 +68,7 @@ set(_gd_components
     qml/components/CommitComposer.qml
     qml/components/StatCard.qml
     qml/components/WelcomeView.qml
+    qml/components/AboutContent.qml
 )
 foreach (_f IN LISTS _gd_components)
     set_source_files_properties(${_f} PROPERTIES QT_RESOURCE_ALIAS ${_f})

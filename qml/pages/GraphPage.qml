@@ -11,7 +11,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 12
-        text: qsTr("Graph")
+        text: qsTr("图谱")
         role: Md3Text.TitleSmall
     }
 

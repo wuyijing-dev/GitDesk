@@ -69,6 +69,10 @@ public:
     QStringList tags() const { return m_tags; }
     QVariantList projectTree() const { return m_projectTree; }
     QVariantList recentActivity() const { return m_recentActivity; }
+    QVariantList stashes() const { return m_stashes; }
+    int ahead() const { return m_ahead; }
+    int behind() const { return m_behind; }
+    bool hasUpstream() const { return m_hasUpstream; }
 
     QString fileDiff(const QString &path, bool staged) const;
     QString commitDiff(const QString &commitId) const;
@@ -78,6 +82,11 @@ public:
     bool unstage(const QString &path, QString *error = nullptr);
     bool stageAll(QString *error = nullptr);
     bool unstageAll(QString *error = nullptr);
+    bool discard(const QString &path, QString *error = nullptr);
+    bool discardAll(QString *error = nullptr);
+    bool stashSave(const QString &message, QString *error = nullptr);
+    bool stashPop(QString *error = nullptr);
+    bool stashDrop(int index, QString *error = nullptr);
     bool commit(const QString &message, bool amend, QString *error = nullptr);
     bool checkout(const QString &ref, QString *error = nullptr);
     bool createBranch(const QString &name, QString *error = nullptr);
@@ -86,6 +95,13 @@ public:
     bool fetch(QString *error = nullptr);
     bool pull(QString *error = nullptr);
     bool push(QString *error = nullptr);
+    bool pushSetUpstream(QString *error = nullptr);
+    bool createTag(const QString &name, const QString &message = {}, QString *error = nullptr);
+    bool deleteTag(const QString &name, QString *error = nullptr);
+    /// Clone into destDir (full path of new repo folder), then open it.
+    bool cloneRepo(const QString &url, const QString &destDir, QString *error = nullptr);
+    /// git init in path, then open.
+    bool initRepo(const QString &path, QString *error = nullptr);
 
 signals:
     void changed();
@@ -97,8 +113,12 @@ private:
     bool loadStatus(QString *error);
     bool loadRemotesTags(QString *error);
     bool loadStats(QString *error);
+    bool loadStashes(QString *error);
+    bool loadAheadBehind(QString *error);
     void buildProjectTree();
-    bool runOk(const QStringList &args, QString *error, QString *stdoutOut = nullptr) const;
+    bool runOk(const QStringList &args, QString *error, QString *stdoutOut = nullptr,
+               int timeoutMs = 60000) const;
+    bool isUntracked(const QString &path) const;
 
     GitRunner *m_runner = nullptr;
     QString m_path;
@@ -111,5 +131,9 @@ private:
     QStringList m_tags;
     QVariantList m_projectTree;
     QVariantList m_recentActivity;
+    QVariantList m_stashes;
     RepoStats m_stats;
+    int m_ahead = 0;
+    int m_behind = 0;
+    bool m_hasUpstream = false;
 };

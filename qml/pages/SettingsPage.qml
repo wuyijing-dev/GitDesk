@@ -374,6 +374,40 @@ Item {
                             text: "· " + String(modelData)
                         }
                     }
+                    Md3Text {
+                        visible: GitDeskApp.versionInfo.changelog.length > 0
+                        text: qsTr("更新日志")
+                        role: Md3Text.TitleSmall
+                    }
+                    Repeater {
+                        model: GitDeskApp.versionInfo.changelog
+                        delegate: Column {
+                            required property var modelData
+                            width: parent.width
+                            spacing: 2
+                            Md3Text {
+                                width: parent.width
+                                wrapMode: Text.Wrap
+                                role: Md3Text.LabelMedium
+                                text: String(modelData.version || "")
+                                      + " (" + String(modelData.date || "") + ") — "
+                                      + String(modelData.title || "")
+                            }
+                            Repeater {
+                                model: modelData.changes || []
+                                delegate: Md3Text {
+                                    required property var modelData
+                                    width: parent ? parent.width : 280
+                                    wrapMode: Text.Wrap
+                                    role: Md3Text.BodySmall
+                                    tone: Md3Text.OnSurfaceVariant
+                                    text: "  [" + String(modelData.type || "") + "] "
+                                          + String(modelData.text || "")
+                                }
+                            }
+                            Item { width: 1; height: 8 }
+                        }
+                    }
                 }
             }
         }

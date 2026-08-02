@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSet>
 
 GitRepository::GitRepository(GitRunner *runner, QObject *parent)
@@ -18,9 +19,9 @@ QString GitRepository::name() const
     return QFileInfo(m_path).fileName();
 }
 
-bool GitRepository::runOk(const QStringList &args, QString *error, QString *stdoutOut) const
+bool GitRepository::runOk(const QStringList &args, QString *error, QString *stdoutOut, int timeoutMs) const
 {
-    const GitResult r = m_runner->run(m_path, args);
+    const GitResult r = m_runner->run(m_path, args, timeoutMs);
     if (stdoutOut)
         *stdoutOut = r.stdoutText;
     if (!r.ok()) {
@@ -67,7 +68,11 @@ void GitRepository::close()
     m_tags.clear();
     m_projectTree.clear();
     m_recentActivity.clear();
+    m_stashes.clear();
     m_stats = {};
+    m_ahead = 0;
+    m_behind = 0;
+    m_hasUpstream = false;
     emit changed();
 }
 
@@ -85,6 +90,8 @@ bool GitRepository::refresh(QString *error)
         return false;
     if (!loadRemotesTags(error))
         return false;
+    loadStashes(error);
+    loadAheadBehind(error);
     loadStats(error);
     buildProjectTree();
     emit changed();
@@ -341,6 +348,80 @@ bool GitRepository::loadStats(QString *error)
     return true;
 }
 
+bool GitRepository::loadStashes(QString *error)
+{
+    m_stashes.clear();
+    QString out;
+    if (!runOk({QStringLiteral("stash"), QStringLiteral("list"),
+                QStringLiteral("--format=%gd%x1f%gs")},
+               error, &out)) {
+        return true; // empty / no stash is fine
+    }
+    const QStringList lines = out.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QStringList parts = line.split(QChar(0x1f));
+        QVariantMap entry;
+        entry.insert(QStringLiteral("ref"), parts.value(0).trimmed());
+        entry.insert(QStringLiteral("message"), parts.value(1).trimmed());
+        // stash@{N}
+        const QString ref = parts.value(0).trimmed();
+        int idx = -1;
+        const int l = ref.indexOf(QLatin1Char('{'));
+        const int r = ref.indexOf(QLatin1Char('}'));
+        if (l >= 0 && r > l)
+            idx = ref.mid(l + 1, r - l - 1).toInt();
+        entry.insert(QStringLiteral("index"), idx);
+        m_stashes.push_back(entry);
+        if (m_stashes.size() >= 30)
+            break;
+    }
+    return true;
+}
+
+bool GitRepository::loadAheadBehind(QString *error)
+{
+    Q_UNUSED(error)
+    m_ahead = 0;
+    m_behind = 0;
+    m_hasUpstream = false;
+    if (m_path.isEmpty())
+        return true;
+
+    QString up;
+    if (!runOk({QStringLiteral("rev-parse"), QStringLiteral("--abbrev-ref"),
+                QStringLiteral("@{u}")},
+               nullptr, &up)) {
+        return true;
+    }
+    if (up.trimmed().isEmpty())
+        return true;
+    m_hasUpstream = true;
+
+    QString counts;
+    if (!runOk({QStringLiteral("rev-list"), QStringLiteral("--left-right"),
+                QStringLiteral("--count"), QStringLiteral("@{u}...HEAD")},
+               nullptr, &counts)) {
+        return true;
+    }
+    // left = upstream-only (behind), right = HEAD-only (ahead)
+    const QStringList parts = counts.trimmed().split(QRegularExpression(QStringLiteral("[\\s\\t]+")),
+                                                     Qt::SkipEmptyParts);
+    if (parts.size() >= 2) {
+        m_behind = parts[0].toInt();
+        m_ahead = parts[1].toInt();
+    }
+    return true;
+}
+
+bool GitRepository::isUntracked(const QString &path) const
+{
+    for (const FileChange &c : m_changes) {
+        if (!c.staged && c.path == path && c.status == QLatin1String("??"))
+            return true;
+    }
+    return false;
+}
+
 void GitRepository::buildProjectTree()
 {
     m_projectTree.clear();
@@ -433,6 +514,55 @@ bool GitRepository::unstageAll(QString *error)
            && refresh(error);
 }
 
+bool GitRepository::discard(const QString &path, QString *error)
+{
+    if (path.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Empty path");
+        return false;
+    }
+    if (isUntracked(path)) {
+        if (!runOk({QStringLiteral("clean"), QStringLiteral("-f"), QStringLiteral("--"), path}, error))
+            return false;
+    } else {
+        if (!runOk({QStringLiteral("restore"), QStringLiteral("--worktree"), QStringLiteral("--"), path}, error))
+            return false;
+    }
+    return refresh(error);
+}
+
+bool GitRepository::discardAll(QString *error)
+{
+    // Only tracked unstaged worktree changes — does not touch staged or delete untracked.
+    if (!runOk({QStringLiteral("restore"), QStringLiteral("--worktree"), QStringLiteral(".")}, error))
+        return false;
+    return refresh(error);
+}
+
+bool GitRepository::stashSave(const QString &message, QString *error)
+{
+    QStringList args = {QStringLiteral("stash"), QStringLiteral("push"), QStringLiteral("-u")};
+    if (!message.trimmed().isEmpty())
+        args << QStringLiteral("-m") << message.trimmed();
+    return runOk(args, error) && refresh(error);
+}
+
+bool GitRepository::stashPop(QString *error)
+{
+    return runOk({QStringLiteral("stash"), QStringLiteral("pop")}, error) && refresh(error);
+}
+
+bool GitRepository::stashDrop(int index, QString *error)
+{
+    if (index < 0) {
+        if (error)
+            *error = QStringLiteral("Invalid stash index");
+        return false;
+    }
+    const QString ref = QStringLiteral("stash@{%1}").arg(index);
+    return runOk({QStringLiteral("stash"), QStringLiteral("drop"), ref}, error) && refresh(error);
+}
+
 bool GitRepository::commit(const QString &message, bool amend, QString *error)
 {
     if (message.trimmed().isEmpty() && !amend) {
@@ -488,4 +618,100 @@ bool GitRepository::pull(QString *error)
 bool GitRepository::push(QString *error)
 {
     return runOk({QStringLiteral("push")}, error) && refresh(error);
+}
+
+bool GitRepository::pushSetUpstream(QString *error)
+{
+    QString branch = m_currentBranch;
+    if (branch.isEmpty() || branch == QLatin1String("(detached)")) {
+        if (error)
+            *error = QStringLiteral("No local branch to push");
+        return false;
+    }
+    QString remote = QStringLiteral("origin");
+    if (!m_remotes.isEmpty())
+        remote = m_remotes.first();
+    return runOk({QStringLiteral("push"), QStringLiteral("-u"), remote, branch}, error)
+           && refresh(error);
+}
+
+bool GitRepository::createTag(const QString &name, const QString &message, QString *error)
+{
+    if (name.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Tag name is empty");
+        return false;
+    }
+    QStringList args = {QStringLiteral("tag")};
+    if (!message.trimmed().isEmpty())
+        args << QStringLiteral("-a") << name.trimmed() << QStringLiteral("-m") << message.trimmed();
+    else
+        args << name.trimmed();
+    return runOk(args, error) && refresh(error);
+}
+
+bool GitRepository::deleteTag(const QString &name, QString *error)
+{
+    if (name.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Tag name is empty");
+        return false;
+    }
+    return runOk({QStringLiteral("tag"), QStringLiteral("-d"), name.trimmed()}, error) && refresh(error);
+}
+
+bool GitRepository::cloneRepo(const QString &url, const QString &destDir, QString *error)
+{
+    const QString cleanedUrl = url.trimmed();
+    const QString dest = QDir::cleanPath(destDir);
+    if (cleanedUrl.isEmpty() || dest.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("URL and destination are required");
+        return false;
+    }
+    if (QFileInfo::exists(dest)) {
+        if (error)
+            *error = QStringLiteral("Destination already exists");
+        return false;
+    }
+    const QFileInfo destInfo(dest);
+    const QString parent = destInfo.absolutePath();
+    if (!QDir(parent).exists()) {
+        if (error)
+            *error = QStringLiteral("Parent directory does not exist");
+        return false;
+    }
+
+    const GitResult r = m_runner->run(QString(),
+                                      {QStringLiteral("clone"), cleanedUrl, dest},
+                                      600000);
+    if (!r.ok()) {
+        if (error) {
+            *error = r.stderrText.trimmed();
+            if (error->isEmpty())
+                *error = QStringLiteral("Clone failed (%1)").arg(r.exitCode);
+        }
+        return false;
+    }
+    return open(dest, error);
+}
+
+bool GitRepository::initRepo(const QString &path, QString *error)
+{
+    const QString cleaned = QDir::cleanPath(path);
+    if (cleaned.isEmpty() || !QFileInfo::exists(cleaned) || !QFileInfo(cleaned).isDir()) {
+        if (error)
+            *error = QStringLiteral("Directory does not exist");
+        return false;
+    }
+    const GitResult r = m_runner->run(cleaned, {QStringLiteral("init")});
+    if (!r.ok()) {
+        if (error) {
+            *error = r.stderrText.trimmed();
+            if (error->isEmpty())
+                *error = QStringLiteral("git init failed (%1)").arg(r.exitCode);
+        }
+        return false;
+    }
+    return open(cleaned, error);
 }

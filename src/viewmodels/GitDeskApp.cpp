@@ -186,6 +186,10 @@ void GitDeskApp::syncModels()
 
     m_cachedProjectTree = m_repo.projectTree();
     m_cachedRecentActivity = m_repo.recentActivity();
+    m_cachedStashes = m_repo.stashes();
+    m_cachedAhead = m_repo.ahead();
+    m_cachedBehind = m_repo.behind();
+    m_cachedHasUpstream = m_repo.hasUpstream();
 
     m_cachedLocalBranches.clear();
     for (const BranchInfo &b : m_repo.branches()) {
@@ -407,7 +411,11 @@ void GitDeskApp::closeRepository()
     m_cachedProjectTree.clear();
     m_cachedRecentActivity.clear();
     m_cachedLocalBranches.clear();
+    m_cachedStashes.clear();
     m_cachedSelectedCommit.clear();
+    m_cachedAhead = 0;
+    m_cachedBehind = 0;
+    m_cachedHasUpstream = false;
     m_commits->clear();
     m_changes->clear();
     m_branches->clear();
@@ -462,12 +470,28 @@ void GitDeskApp::push()
 {
     if (!m_repo.isOpen())
         return;
+    if (!m_cachedHasUpstream) {
+        pushSetUpstream();
+        return;
+    }
     runAsync(tr("正在 Push…"), [this]() {
         QString error;
         if (!m_repo.push(&error))
             return error.isEmpty() ? tr("Push 失败") : error;
         return QString();
     }, tr("Push 完成"));
+}
+
+void GitDeskApp::pushSetUpstream()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("正在 Push 并设置上游…"), [this]() {
+        QString error;
+        if (!m_repo.pushSetUpstream(&error))
+            return error.isEmpty() ? tr("Push 失败") : error;
+        return QString();
+    }, tr("已推送并设置上游"));
 }
 
 void GitDeskApp::stageFile(const QString &path)
@@ -516,6 +540,72 @@ void GitDeskApp::unstageAll()
             return error.isEmpty() ? tr("Unstage all 失败") : error;
         return QString();
     }, tr("已全部取消暂存"));
+}
+
+void GitDeskApp::discardFile(const QString &path)
+{
+    if (!m_repo.isOpen() || path.isEmpty())
+        return;
+    runAsync(tr("丢弃变更…"), [this, path]() {
+        QString error;
+        if (!m_repo.discard(path, &error))
+            return error.isEmpty() ? tr("丢弃失败") : error;
+        return QString();
+    }, tr("已丢弃 %1").arg(path), [this, path]() {
+        if (m_selectedFilePath == path) {
+            m_selectedFilePath.clear();
+            m_currentDiff.clear();
+            emit selectionChanged();
+        }
+    });
+}
+
+void GitDeskApp::discardAll()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("丢弃全部未暂存…"), [this]() {
+        QString error;
+        if (!m_repo.discardAll(&error))
+            return error.isEmpty() ? tr("丢弃失败") : error;
+        return QString();
+    }, tr("已丢弃未暂存变更"));
+}
+
+void GitDeskApp::stashSave(const QString &message)
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("Stash…"), [this, message]() {
+        QString error;
+        if (!m_repo.stashSave(message, &error))
+            return error.isEmpty() ? tr("Stash 失败") : error;
+        return QString();
+    }, tr("已保存 Stash"));
+}
+
+void GitDeskApp::stashPop()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("Stash Pop…"), [this]() {
+        QString error;
+        if (!m_repo.stashPop(&error))
+            return error.isEmpty() ? tr("Stash Pop 失败") : error;
+        return QString();
+    }, tr("已弹出 Stash"));
+}
+
+void GitDeskApp::stashDrop(int index)
+{
+    if (!m_repo.isOpen() || index < 0)
+        return;
+    runAsync(tr("删除 Stash…"), [this, index]() {
+        QString error;
+        if (!m_repo.stashDrop(index, &error))
+            return error.isEmpty() ? tr("删除 Stash 失败") : error;
+        return QString();
+    }, tr("已删除 Stash"));
 }
 
 void GitDeskApp::commit()
@@ -584,6 +674,94 @@ void GitDeskApp::mergeBranch(const QString &name)
             return error.isEmpty() ? tr("Merge 失败") : error;
         return QString();
     }, tr("已合并 %1").arg(name));
+}
+
+void GitDeskApp::createTag(const QString &name, const QString &message)
+{
+    if (!m_repo.isOpen() || name.trimmed().isEmpty())
+        return;
+    runAsync(tr("创建标签…"), [this, name, message]() {
+        QString error;
+        if (!m_repo.createTag(name, message, &error))
+            return error.isEmpty() ? tr("创建标签失败") : error;
+        return QString();
+    }, tr("已创建标签 %1").arg(name.trimmed()));
+}
+
+void GitDeskApp::deleteTag(const QString &name)
+{
+    if (!m_repo.isOpen() || name.trimmed().isEmpty())
+        return;
+    runAsync(tr("删除标签…"), [this, name]() {
+        QString error;
+        if (!m_repo.deleteTag(name, &error))
+            return error.isEmpty() ? tr("删除标签失败") : error;
+        return QString();
+    }, tr("已删除标签 %1").arg(name.trimmed()));
+}
+
+void GitDeskApp::cloneRepository(const QString &url, const QString &destDir)
+{
+    if (url.trimmed().isEmpty() || destDir.trimmed().isEmpty()) {
+        emit notify(tr("请填写克隆地址与目标目录"), QStringLiteral("error"));
+        return;
+    }
+    const QString u = url.trimmed();
+    const QString d = QFileInfo(destDir.trimmed()).absoluteFilePath();
+    runAsync(tr("正在克隆…"), [this, u, d]() {
+        QString error;
+        if (!m_repo.cloneRepo(u, d, &error))
+            return error.isEmpty() ? tr("克隆失败") : error;
+        return QString();
+    }, tr("克隆完成"), [this, d]() {
+        rememberRecent(m_cachedPath.isEmpty() ? d : m_cachedPath);
+        m_selectedCommitId.clear();
+        m_selectedFilePath.clear();
+        m_commitMessage.clear();
+        m_currentDiff.clear();
+        emit commitMessageChanged();
+        emit selectionChanged();
+    });
+}
+
+QString GitDeskApp::pickCloneDirectory()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        nullptr, tr("选择克隆目标父目录"),
+        m_recentRepos.isEmpty() ? QString() : m_recentRepos.first());
+    return dir;
+}
+
+void GitDeskApp::initRepository(const QString &path)
+{
+    if (path.trimmed().isEmpty())
+        return;
+    const QString abs = QFileInfo(path).absoluteFilePath();
+    runAsync(tr("正在初始化仓库…"), [this, abs]() {
+        QString error;
+        if (!m_repo.initRepo(abs, &error))
+            return error.isEmpty() ? tr("初始化失败") : error;
+        return QString();
+    }, tr("仓库已初始化"), [this, abs]() {
+        rememberRecent(m_cachedPath.isEmpty() ? abs : m_cachedPath);
+        m_selectedCommitId.clear();
+        m_selectedFilePath.clear();
+        m_commitMessage.clear();
+        m_currentDiff.clear();
+        emit commitMessageChanged();
+        emit selectionChanged();
+    });
+}
+
+QString GitDeskApp::pickAndInitRepository()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        nullptr, tr("选择要初始化的文件夹"),
+        m_recentRepos.isEmpty() ? QString() : m_recentRepos.first());
+    if (dir.isEmpty())
+        return {};
+    initRepository(dir);
+    return dir;
 }
 
 void GitDeskApp::selectChange(const QString &path, bool staged)

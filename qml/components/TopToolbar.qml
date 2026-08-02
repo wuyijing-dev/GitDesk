@@ -29,7 +29,7 @@ Md3AppToolBar {
 
     Md3DropDownButton {
         visible: GitDeskApp.hasRepo
-        text: GitDeskApp.currentBranch.length ? GitDeskApp.currentBranch : qsTr("Branch")
+        text: GitDeskApp.currentBranch.length ? GitDeskApp.currentBranch : qsTr("分支")
         icon: "call_split"
         menuModel: {
             const items = []
@@ -52,32 +52,41 @@ Md3AppToolBar {
         }
     }
 
+    Md3Text {
+        visible: GitDeskApp.hasRepo && GitDeskApp.hasUpstream
+        text: qsTr("↑%1 ↓%2").arg(GitDeskApp.ahead).arg(GitDeskApp.behind)
+        role: Md3Text.LabelSmall
+        tone: (GitDeskApp.ahead > 0 || GitDeskApp.behind > 0)
+              ? Md3Text.Primary
+              : Md3Text.OnSurfaceVariant
+    }
+
     Md3Spacer { expand: true }
 
     Md3AppBarButton {
         visible: GitDeskApp.hasRepo
         icon: "cloud_download"
-        label: qsTr("Fetch")
+        label: qsTr("获取")
         enabled: !GitDeskApp.busy
         onClicked: GitDeskApp.fetch()
     }
     Md3AppBarButton {
         visible: GitDeskApp.hasRepo
         icon: "download"
-        label: qsTr("Pull")
+        label: qsTr("拉取")
         enabled: !GitDeskApp.busy
         onClicked: GitDeskApp.pull()
     }
     Md3AppBarButton {
         visible: GitDeskApp.hasRepo
         icon: "upload"
-        label: qsTr("Push")
+        label: qsTr("推送")
         enabled: !GitDeskApp.busy
         onClicked: GitDeskApp.push()
     }
     Md3Button {
         visible: GitDeskApp.hasRepo
-        text: qsTr("Commit")
+        text: qsTr("提交")
         icon: "commit"
         variant: Md3Button.Filled
         enabled: !GitDeskApp.busy
@@ -85,6 +94,14 @@ Md3AppToolBar {
             GitDeskApp.workspaceTab = 2
             GitDeskApp.detailOpen = false
         }
+    }
+
+    Md3AppBarButton {
+        visible: GitDeskApp.hasRepo && !GitDeskApp.hasUpstream
+        icon: "upload"
+        label: qsTr("推送上游")
+        enabled: !GitDeskApp.busy
+        onClicked: GitDeskApp.pushSetUpstream()
     }
 
     Md3AppBarButton {

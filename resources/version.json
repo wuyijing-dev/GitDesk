@@ -1,6 +1,6 @@
 {
   "name": "GitDesk",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "buildDate": "2026-08-03",
   "channel": "release",
   "organization": "wuyijing-dev",
@@ -12,11 +12,34 @@
     "highlights": [
       "IDE 风格布局：资源树 · Graph · Changes · History",
       "异步 Git 操作，避免 UI 卡顿",
-      "Md3 深色主题与命令面板",
-      "中英文界面；版本信息由 version.json 驱动"
+      "丢弃变更、Stash、克隆、Tag、ahead/behind",
+      "中英文界面（中文源文案 + en.qm）；version.json 驱动关于信息"
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.1",
+      "date": "2026-08-03",
+      "title": "全局语言与工作流增强",
+      "changes": [
+        { "type": "fix", "text": "修复语言切换不生效：正确 context 的 .qm、中文源文案、locale.revision 触发重译" },
+        { "type": "feature", "text": "欢迎页初始化仓库（git init）" },
+        { "type": "feature", "text": "History 提交搜索过滤" },
+        { "type": "feature", "text": "无上游时 Push -u / 推送上游" }
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-08-03",
+      "title": "日常 Git 操作增强",
+      "changes": [
+        { "type": "feature", "text": "丢弃单文件 / 全部未暂存变更（确认对话框）" },
+        { "type": "feature", "text": "Stash 保存 / Pop / 列表 / 删除" },
+        { "type": "feature", "text": "欢迎页克隆仓库" },
+        { "type": "feature", "text": "创建与删除本地 Tag" },
+        { "type": "feature", "text": "顶栏与状态栏显示分支 ahead/behind" }
+      ]
+    },
     {
       "version": "0.1.0",
       "date": "2026-08-03",

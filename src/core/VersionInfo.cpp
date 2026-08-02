@@ -74,11 +74,44 @@ QString VersionInfo::aboutPlainText() const
 {
     QStringList lines;
     lines << m_name + QLatin1Char(' ') + m_version;
+    if (!m_channel.isEmpty() || !m_buildDate.isEmpty()) {
+        QString meta = m_channel;
+        if (!m_buildDate.isEmpty())
+            meta += (meta.isEmpty() ? QString() : QStringLiteral(" · ")) + m_buildDate;
+        lines << meta;
+    }
     if (!m_tagline.isEmpty())
-        lines << m_tagline;
+        lines << QString() << m_tagline;
     if (!m_description.isEmpty())
         lines << QString() << m_description;
-    if (!m_author.isEmpty())
-        lines << QString() << QObject::tr("作者：%1").arg(m_author);
+    if (!m_highlights.isEmpty()) {
+        lines << QString();
+        for (const QString &h : m_highlights)
+            lines << QStringLiteral("· ") + h;
+    }
+    if (!m_changelog.isEmpty()) {
+        lines << QString() << QObject::tr("更新日志");
+        for (const QVariant &entryVal : m_changelog) {
+            const QVariantMap e = entryVal.toMap();
+            const QString ver = e.value(QStringLiteral("version")).toString();
+            const QString date = e.value(QStringLiteral("date")).toString();
+            const QString title = e.value(QStringLiteral("title")).toString();
+            lines << QString() << QStringLiteral("%1 (%2) — %3").arg(ver, date, title);
+            const QVariantList changes = e.value(QStringLiteral("changes")).toList();
+            for (const QVariant &cVal : changes) {
+                const QVariantMap c = cVal.toMap();
+                const QString type = c.value(QStringLiteral("type")).toString();
+                const QString text = c.value(QStringLiteral("text")).toString();
+                lines << QStringLiteral("  [%1] %2").arg(type, text);
+            }
+        }
+    }
+    if (!m_organization.isEmpty() || !m_author.isEmpty()) {
+        lines << QString();
+        if (!m_organization.isEmpty())
+            lines << m_organization;
+        if (!m_author.isEmpty())
+            lines << QObject::tr("作者：%1").arg(m_author);
+    }
     return lines.join(QLatin1Char('\n'));
 }

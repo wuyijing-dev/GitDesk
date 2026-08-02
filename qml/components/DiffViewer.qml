@@ -19,17 +19,20 @@ Item {
             visible: !root.compact
 
             Md3Text {
-                text: qsTr("Diff")
+                text: qsTr("差异")
                 role: Md3Text.TitleSmall
             }
             Md3Spacer { expand: true }
             Md3ButtonGroup {
                 layout: Md3ButtonGroup.Connected
                 currentIndex: root.splitView ? 1 : 0
-                model: [
-                    { text: qsTr("Inline"), icon: "view_agenda" },
-                    { text: qsTr("Split"), icon: "vertical_split" }
-                ]
+                model: {
+                    const _ = GitDeskApp.locale.revision
+                    return [
+                        { text: qsTr("单栏"), icon: "view_agenda" },
+                        { text: qsTr("分栏"), icon: "vertical_split" }
+                    ]
+                }
                 onClicked: function (index) { root.splitView = index === 1 }
             }
         }
@@ -39,15 +42,15 @@ Item {
             width: parent.width
             property bool expand: true
             icon: "difference"
-            title: qsTr("无 Diff")
-            body: qsTr("选择变更文件或 Commit")
+            title: qsTr("无差异")
+            body: qsTr("选择变更文件或提交")
         }
 
         Md3Text {
             visible: GitDeskApp.diffLoading
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            text: qsTr("加载 Diff…")
+            text: qsTr("加载差异…")
             role: Md3Text.BodyMedium
             tone: Md3Text.OnSurfaceVariant
         }
@@ -72,7 +75,7 @@ showLineNumbers: {
             scrollable: true
             showCopyButton: !root.compact
             onCopied: function (text) {
-                Md3Notify.copy(text, { feedback: qsTr("Diff 已复制") })
+                Md3Notify.copy(text, { feedback: qsTr("差异已复制") })
             }
         }
     }

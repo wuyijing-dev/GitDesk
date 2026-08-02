@@ -47,8 +47,12 @@ class GitDeskApp : public QObject
     Q_PROPERTY(int tagCount READ tagCount NOTIFY repoChanged)
     Q_PROPERTY(int contributorCount READ contributorCount NOTIFY repoChanged)
     Q_PROPERTY(int changedFileCount READ changedFileCount NOTIFY repoChanged)
-
+    Q_PROPERTY(int conflictCount READ conflictCount NOTIFY repoChanged)
+    Q_PROPERTY(QString currentDiff READ currentDiff NOTIFY selectionChanged)
+    Q_PROPERTY(bool mergeInProgress READ mergeInProgress NOTIFY repoChanged)
+    Q_PROPERTY(bool rebaseInProgress READ rebaseInProgress NOTIFY repoChanged)
     Q_PROPERTY(QVariantList remotes READ remotes NOTIFY repoChanged)
+    Q_PROPERTY(QVariantList remoteDetails READ remoteDetails NOTIFY repoChanged)
     Q_PROPERTY(QVariantList tags READ tags NOTIFY repoChanged)
     Q_PROPERTY(QVariantList projectTree READ projectTree NOTIFY repoChanged)
     Q_PROPERTY(QVariantList recentActivity READ recentActivity NOTIFY repoChanged)
@@ -62,7 +66,10 @@ class GitDeskApp : public QObject
     Q_PROPERTY(QVariantMap selectedCommit READ selectedCommit NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedFilePath READ selectedFilePath WRITE setSelectedFilePath NOTIFY selectionChanged)
     Q_PROPERTY(bool selectedFileStaged READ selectedFileStaged WRITE setSelectedFileStaged NOTIFY selectionChanged)
-    Q_PROPERTY(QString currentDiff READ currentDiff NOTIFY selectionChanged)
+    Q_PROPERTY(QVariantList fileHistory READ fileHistory NOTIFY selectionChanged)
+    Q_PROPERTY(QVariantList fileBlame READ fileBlame NOTIFY selectionChanged)
+    Q_PROPERTY(bool showBlame READ showBlame WRITE setShowBlame NOTIFY showBlameChanged)
+    Q_PROPERTY(QVariantMap branchCompare READ branchCompare NOTIFY branchCompareChanged)
     Q_PROPERTY(bool diffLoading READ diffLoading NOTIFY diffLoadingChanged)
     Q_PROPERTY(QString commitMessage READ commitMessage WRITE setCommitMessage NOTIFY commitMessageChanged)
     Q_PROPERTY(bool amendCommit READ amendCommit WRITE setAmendCommit NOTIFY amendCommitChanged)
@@ -101,8 +108,12 @@ public:
     int tagCount() const { return m_cachedStats.tagCount; }
     int contributorCount() const { return m_cachedStats.contributorCount; }
     int changedFileCount() const { return m_cachedStats.changedFileCount; }
+    int conflictCount() const { return m_cachedStats.conflictCount; }
+    bool mergeInProgress() const { return m_cachedMergeInProgress; }
+    bool rebaseInProgress() const { return m_cachedRebaseInProgress; }
 
     QVariantList remotes() const { return m_cachedRemotes; }
+    QVariantList remoteDetails() const { return m_cachedRemoteDetails; }
     QVariantList tags() const { return m_cachedTags; }
     QVariantList projectTree() const { return m_cachedProjectTree; }
     QVariantList recentActivity() const { return m_cachedRecentActivity; }
@@ -120,6 +131,11 @@ public:
     bool selectedFileStaged() const { return m_selectedFileStaged; }
     void setSelectedFileStaged(bool staged);
     QString currentDiff() const { return m_currentDiff; }
+    QVariantList fileHistory() const { return m_cachedFileHistory; }
+    QVariantList fileBlame() const { return m_cachedFileBlame; }
+    bool showBlame() const { return m_showBlame; }
+    void setShowBlame(bool on);
+    QVariantMap branchCompare() const { return m_cachedBranchCompare; }
 
     QString commitMessage() const { return m_commitMessage; }
     void setCommitMessage(const QString &msg);
@@ -133,6 +149,7 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void fetch();
     Q_INVOKABLE void pull();
+    Q_INVOKABLE void pullRebase();
     Q_INVOKABLE void push();
     Q_INVOKABLE void pushSetUpstream();
     Q_INVOKABLE void stageFile(const QString &path);
@@ -147,14 +164,25 @@ public:
     Q_INVOKABLE void commit();
     Q_INVOKABLE void checkoutBranch(const QString &name);
     Q_INVOKABLE void createBranch(const QString &name);
+    Q_INVOKABLE void createBranchAt(const QString &name, const QString &startPoint);
     Q_INVOKABLE void deleteBranch(const QString &name, bool force = false);
     Q_INVOKABLE void mergeBranch(const QString &name);
+    Q_INVOKABLE void revertCommit(const QString &commitId);
+    Q_INVOKABLE void cherryPickCommit(const QString &commitId);
+    Q_INVOKABLE void resetToCommit(const QString &commitId, const QString &mode);
     Q_INVOKABLE void createTag(const QString &name, const QString &message = {});
     Q_INVOKABLE void deleteTag(const QString &name);
     Q_INVOKABLE void cloneRepository(const QString &url, const QString &destDir);
     Q_INVOKABLE QString pickCloneDirectory();
     Q_INVOKABLE void initRepository(const QString &path);
     Q_INVOKABLE QString pickAndInitRepository();
+    Q_INVOKABLE void openRepoFolder();
+    Q_INVOKABLE void openRemoteUrl(const QString &url);
+    Q_INVOKABLE void abortMerge();
+    Q_INVOKABLE void abortRebase();
+    Q_INVOKABLE void continueRebase();
+    Q_INVOKABLE void resolveConflict(const QString &path, const QString &side);
+    Q_INVOKABLE void compareBranches(const QString &baseRef, const QString &headRef);
     Q_INVOKABLE void selectChange(const QString &path, bool staged);
     Q_INVOKABLE QString languageForPath(const QString &path) const;
     Q_INVOKABLE void clearRecentRepos();
@@ -168,6 +196,8 @@ signals:
     void workspaceTabChanged();
     void detailOpenChanged();
     void selectionChanged();
+    void showBlameChanged();
+    void branchCompareChanged();
     void diffLoadingChanged();
     void commitMessageChanged();
     void amendCommitChanged();
@@ -212,6 +242,7 @@ private:
     QString m_cachedHeadShort;
     RepoStats m_cachedStats;
     QVariantList m_cachedRemotes;
+    QVariantList m_cachedRemoteDetails;
     QVariantList m_cachedTags;
     QVariantList m_cachedProjectTree;
     QVariantList m_cachedRecentActivity;
@@ -221,6 +252,13 @@ private:
     int m_cachedAhead = 0;
     int m_cachedBehind = 0;
     bool m_cachedHasUpstream = false;
+    bool m_cachedMergeInProgress = false;
+    bool m_cachedRebaseInProgress = false;
+    QVariantList m_cachedFileHistory;
+    QVariantList m_cachedFileBlame;
+    bool m_showBlame = false;
+    QVariantMap m_cachedBranchCompare;
+    QVariantMap m_pendingBranchCompare;
 
     QString m_statusText;
     QString m_busyText;

@@ -88,9 +88,22 @@ Md3ApplicationWindow {
     property bool settingsOpen: false
     property bool showDiffLineNumbers: true
 
+    function openSettings() {
+        // FullscreenDialog.accept() 会写 open=false 打断绑定，这里强制同步
+        settingsOpen = true
+        settingsDialog.open = true
+        if (settingsPage)
+            Qt.callLater(function () { settingsPage.load() })
+    }
+
+    function closeSettings() {
+        settingsOpen = false
+        settingsDialog.open = false
+    }
+
     onSettingsOpenChanged: {
-        if (settingsOpen && settingsPage)
-            settingsPage.load()
+        if (!settingsOpen && settingsDialog.open)
+            settingsDialog.open = false
     }
 
     Connections {
@@ -137,7 +150,7 @@ Md3ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
-        onActivated: window.settingsOpen = true
+        onActivated: window.openSettings()
     }
 
     Md3CommandPalette {
@@ -152,17 +165,21 @@ Md3ApplicationWindow {
                 { title: qsTr("初始化仓库"), icon: "create_new_folder",
                   action: () => GitDeskApp.pickAndInitRepository() },
                 { title: qsTr("设置"), icon: "settings",
-                  action: () => { window.settingsOpen = true } },
+                  action: () => window.openSettings() },
                 { title: qsTr("刷新"), icon: "refresh",
                   action: () => GitDeskApp.refresh() },
                 { title: qsTr("获取"), icon: "cloud_download",
                   action: () => GitDeskApp.fetch() },
                 { title: qsTr("拉取"), icon: "download",
                   action: () => GitDeskApp.pull() },
+                { title: qsTr("拉取 --rebase"), icon: "sync_alt",
+                  action: () => GitDeskApp.pullRebase() },
                 { title: qsTr("推送"), icon: "upload",
                   action: () => GitDeskApp.push() },
                 { title: qsTr("Push 并设置上游"), icon: "upload",
                   action: () => GitDeskApp.pushSetUpstream() },
+                { title: qsTr("对比分支"), icon: "compare_arrows",
+                  action: () => window.openCompareBranchesDialog() },
                 { title: qsTr("贮藏"), icon: "inventory_2",
                   action: () => window.openStashDialog() },
                 { title: qsTr("弹出贮藏"), icon: "unarchive",
@@ -180,7 +197,17 @@ Md3ApplicationWindow {
                 { title: qsTr("历史"), icon: "history",
                   action: () => GitDeskApp.workspaceTab = 3 },
                 { title: qsTr("新建分支"), icon: "add",
-                  action: () => window.openCreateBranchDialog() }
+                  action: () => window.openCreateBranchDialog() },
+                { title: qsTr("打开文件夹"), icon: "folder",
+                  action: () => GitDeskApp.openRepoFolder() },
+                { title: qsTr("中止合并"), icon: "cancel",
+                  action: () => GitDeskApp.abortMerge() },
+                { title: qsTr("继续 Rebase"), icon: "play_arrow",
+                  action: () => GitDeskApp.continueRebase() },
+                { title: qsTr("中止 Rebase"), icon: "cancel",
+                  action: () => GitDeskApp.abortRebase() },
+                { title: qsTr("关闭仓库"), icon: "close",
+                  action: () => GitDeskApp.closeRepository() }
             ]
         }
         onActivated: (item) => { if (item.action) item.action() }
@@ -188,7 +215,7 @@ Md3ApplicationWindow {
 
     toolBar: TopToolbar {
         onCreateBranchRequested: window.openCreateBranchDialog()
-        onSettingsRequested: window.settingsOpen = true
+        onSettingsRequested: window.openSettings()
     }
 
     statusBar: Md3StatusBar {
@@ -197,7 +224,17 @@ Md3ApplicationWindow {
         centerText: GitDeskApp.busy
                     ? GitDeskApp.busyText
                     : (GitDeskApp.hasRepo
-                       ? (GitDeskApp.hasUpstream
+                       ? (GitDeskApp.rebaseInProgress
+                          ? qsTr("%1 · Rebase · 冲突 %2 · %3 changes")
+                            .arg(GitDeskApp.currentBranch)
+                            .arg(GitDeskApp.conflictCount)
+                            .arg(GitDeskApp.changedFileCount)
+                          : (GitDeskApp.mergeInProgress || GitDeskApp.conflictCount > 0
+                          ? qsTr("%1 · 冲突 %2 · %3 changes")
+                            .arg(GitDeskApp.currentBranch)
+                            .arg(GitDeskApp.conflictCount)
+                            .arg(GitDeskApp.changedFileCount)
+                          : (GitDeskApp.hasUpstream
                           ? qsTr("%1 · ↑%2 ↓%3 · %4 changes")
                             .arg(GitDeskApp.currentBranch)
                             .arg(GitDeskApp.ahead)
@@ -205,7 +242,7 @@ Md3ApplicationWindow {
                             .arg(GitDeskApp.changedFileCount)
                           : qsTr("%1 · %2 changes")
                             .arg(GitDeskApp.currentBranch)
-                            .arg(GitDeskApp.changedFileCount))
+                            .arg(GitDeskApp.changedFileCount))))
                        : qsTr("Ctrl+O 打开仓库"))
     }
 
@@ -218,6 +255,8 @@ Md3ApplicationWindow {
             anchors.fill: parent
             visible: !GitDeskApp.hasRepo
             z: 1
+            onSettingsRequested: window.openSettings()
+            onCloneRequested: window.openCloneDialog()
         }
 
         // Only ONE Md3SplitView: Explorer | Workspace
@@ -323,11 +362,16 @@ Md3ApplicationWindow {
     property string pendingDiscardPath: ""
     property string pendingDeleteTag: ""
     property string cloneParentDir: ""
+    property string pendingCommitId: ""
+    property string pendingResetMode: "mixed"
+    property string branchStartPoint: ""
 
     Md3Dialog {
         id: createBranchDialog
         title: qsTr("创建分支")
-        text: qsTr("基于当前 HEAD 创建新分支")
+        text: window.branchStartPoint.length
+              ? qsTr("基于提交 %1 创建新分支").arg(window.branchStartPoint.substring(0, 7))
+              : qsTr("基于当前 HEAD 创建新分支")
         confirmText: qsTr("创建")
         dismissText: qsTr("取消")
 
@@ -340,15 +384,91 @@ Md3ApplicationWindow {
 
         onConfirmed: {
             const name = branchNameField.text.trim()
-            if (name.length > 0)
-                GitDeskApp.createBranch(name)
+            if (name.length > 0) {
+                if (window.branchStartPoint.length)
+                    GitDeskApp.createBranchAt(name, window.branchStartPoint)
+                else
+                    GitDeskApp.createBranch(name)
+            }
             branchNameField.text = ""
+            window.branchStartPoint = ""
         }
     }
 
     function openCreateBranchDialog() {
         branchNameField.text = ""
+        window.branchStartPoint = ""
         createBranchDialog.open = true
+    }
+
+    function openCreateBranchFromCommitDialog(commitId) {
+        branchNameField.text = ""
+        window.branchStartPoint = String(commitId || "")
+        createBranchDialog.open = true
+    }
+
+    Md3Dialog {
+        id: revertDialog
+        title: qsTr("Revert 提交？")
+        text: qsTr("将创建一次新提交，撤销 %1 的变更。").arg(window.pendingCommitId.substring(0, 7))
+        confirmText: qsTr("Revert")
+        confirmTone: Md3Dialog.Error
+        dismissText: qsTr("取消")
+        onConfirmed: {
+            if (window.pendingCommitId.length)
+                GitDeskApp.revertCommit(window.pendingCommitId)
+            window.pendingCommitId = ""
+        }
+    }
+
+    function confirmRevert(commitId) {
+        window.pendingCommitId = String(commitId || "")
+        revertDialog.open = true
+    }
+
+    Md3Dialog {
+        id: cherryPickDialog
+        title: qsTr("Cherry-pick？")
+        text: qsTr("将把提交 %1 应用到当前分支。").arg(window.pendingCommitId.substring(0, 7))
+        confirmText: qsTr("Cherry-pick")
+        dismissText: qsTr("取消")
+        onConfirmed: {
+            if (window.pendingCommitId.length)
+                GitDeskApp.cherryPickCommit(window.pendingCommitId)
+            window.pendingCommitId = ""
+        }
+    }
+
+    function confirmCherryPick(commitId) {
+        window.pendingCommitId = String(commitId || "")
+        cherryPickDialog.open = true
+    }
+
+    Md3Dialog {
+        id: resetDialog
+        title: qsTr("Reset 到提交？")
+        text: {
+            const id = window.pendingCommitId.substring(0, 7)
+            if (window.pendingResetMode === "soft")
+                return qsTr("Soft：移动 HEAD 到 %1，保留暂存区与工作区。").arg(id)
+            if (window.pendingResetMode === "hard")
+                return qsTr("Hard：移动 HEAD 到 %1，并丢弃暂存区与工作区变更。").arg(id)
+            return qsTr("Mixed：移动 HEAD 到 %1，保留工作区，清空暂存区。").arg(id)
+        }
+        confirmText: qsTr("Reset")
+        confirmTone: Md3Dialog.Error
+        dismissText: qsTr("取消")
+        onConfirmed: {
+            if (window.pendingCommitId.length)
+                GitDeskApp.resetToCommit(window.pendingCommitId, window.pendingResetMode)
+            window.pendingCommitId = ""
+        }
+    }
+
+    function confirmReset(commitId, mode) {
+        window.pendingCommitId = String(commitId || "")
+        window.pendingResetMode = String(mode || "mixed")
+        resetDialog.open = true
     }
 
     Md3Dialog {
@@ -388,6 +508,62 @@ Md3ApplicationWindow {
         tagNameField.text = ""
         tagMessageField.text = ""
         createTagDialog.open = true
+    }
+
+    Md3Dialog {
+        id: compareBranchesDialog
+        title: qsTr("对比分支")
+        text: qsTr("查看 head 相对 base 多出的提交")
+        confirmText: qsTr("对比")
+        dismissText: qsTr("取消")
+
+        Md3VStack {
+            width: parent ? parent.width : 280
+            spacing: Md3Theme.spacingSm
+            Md3TextField {
+                id: compareBaseField
+                width: parent.width
+                label: qsTr("Base（对照）")
+                placeholderText: "main"
+            }
+            Md3TextField {
+                id: compareHeadField
+                width: parent.width
+                label: qsTr("Head（当前侧）")
+                placeholderText: qsTr("当前分支")
+            }
+            Md3Text {
+                width: parent.width
+                wrapMode: Text.Wrap
+                role: Md3Text.BodySmall
+                tone: Md3Text.OnSurfaceVariant
+                text: qsTr("本地分支：%1").arg(GitDeskApp.localBranchNames.join(", "))
+            }
+        }
+
+        onConfirmed: {
+            const base = compareBaseField.text.trim()
+            const head = compareHeadField.text.trim()
+            if (base.length && head.length)
+                GitDeskApp.compareBranches(base, head)
+        }
+    }
+
+    function openCompareBranchesDialog() {
+        const names = GitDeskApp.localBranchNames
+        compareBaseField.text = names.length > 0 ? String(names[0]) : "main"
+        compareHeadField.text = GitDeskApp.currentBranch.length
+                                ? GitDeskApp.currentBranch
+                                : (names.length > 1 ? String(names[1]) : "")
+        if (compareBaseField.text === compareHeadField.text && names.length > 1) {
+            for (let i = 0; i < names.length; ++i) {
+                if (String(names[i]) !== compareHeadField.text) {
+                    compareBaseField.text = String(names[i])
+                    break
+                }
+            }
+        }
+        compareBranchesDialog.open = true
     }
 
     Md3Dialog {
@@ -514,21 +690,25 @@ Md3ApplicationWindow {
 
     Md3FullscreenDialog {
         id: settingsDialog
-        open: window.settingsOpen
         title: qsTr("设置")
         confirmText: qsTr("完成")
         layoutMode: Md3ContainerBody.Fit
         onConfirmed: {
             if (settingsPage)
                 settingsPage.save()
-            window.settingsOpen = false
+            window.closeSettings()
         }
-        onDismissed: window.settingsOpen = false
+        onDismissed: window.closeSettings()
+        onOpenChanged: {
+            // 对话框内部把 open 置 false 时，回写窗口状态
+            if (!open && window.settingsOpen)
+                window.settingsOpen = false
+        }
 
         SettingsPage {
             id: settingsPage
             anchors.fill: parent
-            onCloseRequested: window.settingsOpen = false
+            onCloseRequested: window.closeSettings()
             onSaved: {
                 window.showDiffLineNumbers = settingsPage.showDiffLineNumbers
             }

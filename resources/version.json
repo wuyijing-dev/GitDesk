@@ -1,6 +1,6 @@
 {
   "name": "GitDesk",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "buildDate": "2026-08-03",
   "channel": "release",
   "organization": "wuyijing-dev",
@@ -11,21 +11,118 @@
     "description": "GitDesk 面向开发者的 Git 客户端：分支可视化、Commit 历史、Diff、多仓库工作流，基于 Qt 6 与 Md3 组件库。",
     "highlights": [
       "IDE 风格布局：资源树 · Graph · Changes · History",
-      "异步 Git 操作，避免 UI 卡顿",
-      "丢弃变更、Stash、克隆、Tag、ahead/behind",
-      "中英文界面（中文源文案 + en.qm）；version.json 驱动关于信息"
+      "Pull --rebase、冲突 ours/theirs、Blame、分支对比",
+      "Revert / Cherry-pick / Reset Soft·Mixed·Hard、Stash、Tag",
+      "中英文；version.json 驱动关于信息；Md3 易用性反馈文档"
     ]
   },
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-08-03",
+      "title": "强操作：Rebase、Blame、冲突与对比",
+      "changes": [
+        {
+          "type": "feature",
+          "text": "拉取 --rebase；Rebase 进行中可继续/中止"
+        },
+        {
+          "type": "feature",
+          "text": "冲突文件一键采用 ours / theirs"
+        },
+        {
+          "type": "feature",
+          "text": "文件 Blame 视图（详情面板开关）"
+        },
+        {
+          "type": "feature",
+          "text": "分支对比（ahead/behind + 提交列表）"
+        },
+        {
+          "type": "feature",
+          "text": "Reset Hard（确认对话框）"
+        },
+        {
+          "type": "fix",
+          "text": "暴露 currentDiff / changedFileCount 给 QML"
+        },
+        {
+          "type": "docs",
+          "text": "扩充 md3-improvements：DropDown 默认动作、SideSheet 大列表、强操作 UI 观察"
+        },
+        {
+          "type": "improve",
+          "text": "英文翻译补齐 0.3.0 新文案（335 finished）"
+        }
+      ]
+    },
+    {
+      "version": "0.2.3",
+      "date": "2026-08-03",
+      "title": "冲突、文件历史与文档",
+      "changes": [
+        {
+          "type": "feature",
+          "text": "Changes 冲突横幅；合并进行中可中止"
+        },
+        {
+          "type": "feature",
+          "text": "选中文件显示 git log 文件历史，可跳转提交"
+        },
+        {
+          "type": "feature",
+          "text": "远程列表可在浏览器打开（SSH→HTTPS 转换）"
+        },
+        {
+          "type": "docs",
+          "text": "扩充 docs/md3-improvements：FullscreenDialog open 绑定、三段式侧栏等"
+        },
+        {
+          "type": "fix",
+          "text": "设置页可反复打开（双写 open 状态）"
+        }
+      ]
+    },
+    {
+      "version": "0.2.2",
+      "date": "2026-08-03",
+      "title": "提交级操作与远程信息",
+      "changes": [
+        {
+          "type": "feature",
+          "text": "详情面板：Revert、Cherry-pick、Reset Soft/Mixed、从此创建分支"
+        },
+        {
+          "type": "feature",
+          "text": "侧栏显示远程 URL（点击复制）；打开仓库文件夹"
+        },
+        {
+          "type": "feature",
+          "text": "命令面板：打开文件夹、关闭仓库"
+        }
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-08-03",
       "title": "全局语言与工作流增强",
       "changes": [
-        { "type": "fix", "text": "修复语言切换不生效：正确 context 的 .qm、中文源文案、locale.revision 触发重译" },
-        { "type": "feature", "text": "欢迎页初始化仓库（git init）" },
-        { "type": "feature", "text": "History 提交搜索过滤" },
-        { "type": "feature", "text": "无上游时 Push -u / 推送上游" }
+        {
+          "type": "fix",
+          "text": "修复语言切换不生效：正确 context 的 .qm、中文源文案、locale.revision 触发重译"
+        },
+        {
+          "type": "feature",
+          "text": "欢迎页初始化仓库（git init）"
+        },
+        {
+          "type": "feature",
+          "text": "History 提交搜索过滤"
+        },
+        {
+          "type": "feature",
+          "text": "无上游时 Push -u / 推送上游"
+        }
       ]
     },
     {
@@ -33,11 +130,26 @@
       "date": "2026-08-03",
       "title": "日常 Git 操作增强",
       "changes": [
-        { "type": "feature", "text": "丢弃单文件 / 全部未暂存变更（确认对话框）" },
-        { "type": "feature", "text": "Stash 保存 / Pop / 列表 / 删除" },
-        { "type": "feature", "text": "欢迎页克隆仓库" },
-        { "type": "feature", "text": "创建与删除本地 Tag" },
-        { "type": "feature", "text": "顶栏与状态栏显示分支 ahead/behind" }
+        {
+          "type": "feature",
+          "text": "丢弃单文件 / 全部未暂存变更（确认对话框）"
+        },
+        {
+          "type": "feature",
+          "text": "Stash 保存 / Pop / 列表 / 删除"
+        },
+        {
+          "type": "feature",
+          "text": "欢迎页克隆仓库"
+        },
+        {
+          "type": "feature",
+          "text": "创建与删除本地 Tag"
+        },
+        {
+          "type": "feature",
+          "text": "顶栏与状态栏显示分支 ahead/behind"
+        }
       ]
     },
     {
@@ -45,11 +157,26 @@
       "date": "2026-08-03",
       "title": "首个可用版本",
       "changes": [
-        { "type": "feature", "text": "打开仓库、分支切换、Fetch/Pull/Push、暂存与提交" },
-        { "type": "feature", "text": "Overview / Graph / Changes / History 工作区" },
-        { "type": "feature", "text": "设置页：主题、密度、Commit 模板、git 路径" },
-        { "type": "feature", "text": "中英文切换；version.json 版本与关于信息" },
-        { "type": "improve", "text": "Git 操作线程池异步，不阻塞界面" }
+        {
+          "type": "feature",
+          "text": "打开仓库、分支切换、Fetch/Pull/Push、暂存与提交"
+        },
+        {
+          "type": "feature",
+          "text": "Overview / Graph / Changes / History 工作区"
+        },
+        {
+          "type": "feature",
+          "text": "设置页：主题、密度、Commit 模板、git 路径"
+        },
+        {
+          "type": "feature",
+          "text": "中英文切换；version.json 版本与关于信息"
+        },
+        {
+          "type": "improve",
+          "text": "Git 操作线程池异步，不阻塞界面"
+        }
       ]
     }
   ]

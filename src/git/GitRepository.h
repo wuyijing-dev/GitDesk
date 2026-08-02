@@ -43,6 +43,7 @@ struct RepoStats {
     int tagCount = 0;
     int contributorCount = 0;
     int changedFileCount = 0;
+    int conflictCount = 0;
 };
 
 class GitRepository : public QObject
@@ -66,6 +67,7 @@ public:
     QList<FileChange> changes() const { return m_changes; }
     QList<BranchInfo> branches() const { return m_branches; }
     QStringList remotes() const { return m_remotes; }
+    QVariantList remoteDetails() const { return m_remoteDetails; }
     QStringList tags() const { return m_tags; }
     QVariantList projectTree() const { return m_projectTree; }
     QVariantList recentActivity() const { return m_recentActivity; }
@@ -73,10 +75,16 @@ public:
     int ahead() const { return m_ahead; }
     int behind() const { return m_behind; }
     bool hasUpstream() const { return m_hasUpstream; }
+    bool mergeInProgress() const { return m_mergeInProgress; }
+    bool rebaseInProgress() const { return m_rebaseInProgress; }
 
     QString fileDiff(const QString &path, bool staged) const;
     QString commitDiff(const QString &commitId) const;
     CommitInfo commitById(const QString &id) const;
+    QVariantList fileHistory(const QString &path, int limit = 30) const;
+    QVariantList fileBlame(const QString &path) const;
+    /// Compare tipA...tipB → { ahead, behind, commits: [...] }
+    QVariantMap compareRefs(const QString &baseRef, const QString &headRef, int limit = 40) const;
 
     bool stage(const QString &path, QString *error = nullptr);
     bool unstage(const QString &path, QString *error = nullptr);
@@ -90,10 +98,16 @@ public:
     bool commit(const QString &message, bool amend, QString *error = nullptr);
     bool checkout(const QString &ref, QString *error = nullptr);
     bool createBranch(const QString &name, QString *error = nullptr);
+    bool createBranchAt(const QString &name, const QString &startPoint, QString *error = nullptr);
     bool deleteBranch(const QString &name, bool force, QString *error = nullptr);
     bool merge(const QString &branch, QString *error = nullptr);
+    bool revertCommit(const QString &commitId, QString *error = nullptr);
+    bool cherryPick(const QString &commitId, QString *error = nullptr);
+    /// mode: "soft" | "mixed" | "hard"
+    bool resetTo(const QString &commitId, const QString &mode, QString *error = nullptr);
     bool fetch(QString *error = nullptr);
     bool pull(QString *error = nullptr);
+    bool pullRebase(QString *error = nullptr);
     bool push(QString *error = nullptr);
     bool pushSetUpstream(QString *error = nullptr);
     bool createTag(const QString &name, const QString &message = {}, QString *error = nullptr);
@@ -102,6 +116,11 @@ public:
     bool cloneRepo(const QString &url, const QString &destDir, QString *error = nullptr);
     /// git init in path, then open.
     bool initRepo(const QString &path, QString *error = nullptr);
+    bool abortMerge(QString *error = nullptr);
+    bool abortRebase(QString *error = nullptr);
+    bool continueRebase(QString *error = nullptr);
+    /// side: "ours" | "theirs" — checkout then stage
+    bool resolveConflict(const QString &path, const QString &side, QString *error = nullptr);
 
 signals:
     void changed();
@@ -128,6 +147,7 @@ private:
     QList<FileChange> m_changes;
     QList<BranchInfo> m_branches;
     QStringList m_remotes;
+    QVariantList m_remoteDetails;
     QStringList m_tags;
     QVariantList m_projectTree;
     QVariantList m_recentActivity;
@@ -136,4 +156,6 @@ private:
     int m_ahead = 0;
     int m_behind = 0;
     bool m_hasUpstream = false;
+    bool m_mergeInProgress = false;
+    bool m_rebaseInProgress = false;
 };

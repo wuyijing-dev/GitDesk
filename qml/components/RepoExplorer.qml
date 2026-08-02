@@ -36,6 +36,12 @@ Item {
             elide: Text.ElideMiddle
             width: parent.width
         }
+        Md3Button {
+            text: qsTr("打开文件夹")
+            icon: "folder_open"
+            variant: Md3Button.Text
+            onClicked: GitDeskApp.openRepoFolder()
+        }
     }
 
     Md3Divider {
@@ -139,12 +145,28 @@ Item {
                 tone: Md3Text.OnSurfaceVariant
             }
             Repeater {
-                model: GitDeskApp.remotes
+                model: GitDeskApp.remoteDetails.length > 0
+                       ? GitDeskApp.remoteDetails
+                       : GitDeskApp.remotes
                 delegate: Md3ListTile {
                     required property var modelData
                     width: parent.width
-                    title: String(modelData)
+                    title: (modelData && modelData.name !== undefined)
+                           ? String(modelData.name)
+                           : String(modelData)
+                    subtitle: (modelData && modelData.url !== undefined)
+                              ? String(modelData.url)
+                              : ""
                     leadingIcon: "cloud"
+                    trailing: Md3IconButton {
+                        visible: modelData && modelData.url !== undefined
+                        icon: "open_in_new"
+                        onClicked: GitDeskApp.openRemoteUrl(String(modelData.url))
+                    }
+                    onClicked: {
+                        if (modelData && modelData.url)
+                            Md3Notify.copy(String(modelData.url), { feedback: qsTr("已复制远程 URL") })
+                    }
                 }
             }
             Md3Text {

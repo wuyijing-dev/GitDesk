@@ -5,3 +5,7 @@ CMakeLists.txt.user
 *.user
 *.autosave
 .qtcreator/
+
+/dist/
+/i18n/unfinished_sources.txt
+

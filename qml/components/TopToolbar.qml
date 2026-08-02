@@ -70,12 +70,31 @@ Md3AppToolBar {
         enabled: !GitDeskApp.busy
         onClicked: GitDeskApp.fetch()
     }
-    Md3AppBarButton {
+    Md3DropDownButton {
         visible: GitDeskApp.hasRepo
+        text: qsTr("拉取")
         icon: "download"
-        label: qsTr("拉取")
         enabled: !GitDeskApp.busy
-        onClicked: GitDeskApp.pull()
+        menuModel: {
+            const _ = GitDeskApp.locale.revision
+            return [
+                { text: qsTr("拉取 (ff-only)"), icon: "download" },
+                { text: qsTr("拉取 --rebase"), icon: "sync_alt" }
+            ]
+        }
+        onMenuItemClicked: function (index) {
+            if (index === 1)
+                GitDeskApp.pullRebase()
+            else
+                GitDeskApp.pull()
+        }
+    }
+    Md3AppBarButton {
+        visible: GitDeskApp.hasRepo && GitDeskApp.rebaseInProgress
+        icon: "play_arrow"
+        label: qsTr("继续 Rebase")
+        enabled: !GitDeskApp.busy
+        onClicked: GitDeskApp.continueRebase()
     }
     Md3AppBarButton {
         visible: GitDeskApp.hasRepo
@@ -104,6 +123,23 @@ Md3AppToolBar {
         onClicked: GitDeskApp.pushSetUpstream()
     }
 
+    Md3AppBarButton {
+        visible: GitDeskApp.hasRepo
+        icon: "folder"
+        label: qsTr("文件夹")
+        onClicked: GitDeskApp.openRepoFolder()
+    }
+    Md3AppBarButton {
+        visible: GitDeskApp.hasRepo
+        icon: "compare_arrows"
+        label: qsTr("对比")
+        enabled: !GitDeskApp.busy
+        onClicked: {
+            const w = Window.window
+            if (w && w.openCompareBranchesDialog)
+                w.openCompareBranchesDialog()
+        }
+    }
     Md3AppBarButton {
         icon: "folder_open"
         label: qsTr("打开")

@@ -14,6 +14,7 @@ GitDesk 是 **IDE 风格**（顶栏 + 左栏 + 多页工作区 + 旁路详情）
 2. **组合组件互相打架**（`ScrollView` × `VStack expand` × `SplitView` × `TreeView`）
 3. **命名/语义不一致**（如 EmptyState 的 `body` vs 直觉上的 `description`）
 4. **壳层模式偏「目的地导航」**，对「自定义 IDE 壳」文档与示例不足
+5. **对话框 `open` 与外部状态双向同步易断**（设置页第二次打不开）
 
 建议库侧把「消费方易踩坑」提升到与控件 API 表同等优先级。
 
@@ -47,13 +48,13 @@ GitDesk 是 **IDE 风格**（顶栏 + 左栏 + 多页工作区 + 旁路详情）
 
 ### 2.3 `Md3VStack` / `Md3HStack`：`expand: true` 难学、易误用
 
-**现象：** IDE 侧栏用 `expand: true` 的 `Md3ScrollView` 时，视口被撑满，短内容下方出现大块空白（像「内容被挡住」）。
+**现象：** IDE 侧栏 / Changes 用 `expand: true` 的 `Md3ScrollView` 时，视口被撑满或与底部 Commit 叠压。
 
 **改进建议：**
 
 - 文档专节：「何时用 `expand` / 何时用 anchors 定高」
 - 提供 `Md3Fill` / `Md3ExpandingScrollView` 语义更清晰的封装
-- Gallery 增加「侧栏：固定头 + 剩余滚动」标准片段（与 CleanSpace / GitDesk 侧栏同构）
+- Gallery 增加「侧栏：固定头 + 剩余滚动 + sticky footer」标准片段（与 GitDesk 同构）
 
 ### 2.4 `Md3ScrollView`：`contentHeight = max(viewport, content)` 的副作用
 
@@ -183,6 +184,76 @@ GitDesk 不用 destinations，而是：
 
 `RESOURCE_PREFIX`、`QT_RESOURCE_ALIAS`、共享 `Md3.dll` 部署等已有 `consumer-app-main-qml`——建议在 quickstart 第一屏用检查清单（GitDesk / auto_deploy_Qt 已验证）。
 
+### 4.6 `Md3FullscreenDialog.open` 与外部状态双向绑定易断（新）
+
+**现象（GitDesk 设置页）：**
+
+```qml
+Md3FullscreenDialog {
+    open: window.settingsOpen   // 绑定
+    onConfirmed: window.settingsOpen = false
+}
+```
+
+对话框内部 `accept()` / `reject()` 会执行 `open = false`，**打断**对 `window.settingsOpen` 的绑定。之后再把 `settingsOpen = true`，对话框不再打开。欢迎页 / 顶栏「设置」表现为「点了没反应」。
+
+**改进建议：**
+
+| 项 | 建议 |
+|----|------|
+| API | `accept()`/`reject()` 改为发 `requestClose`，由外部写 `open`；或提供不打断绑定的关闭路径 |
+| 文档 | 明确警告：`open: someProp` 与内部写 `open = false` 冲突；推荐 `Binding` / 强制同步函数 |
+| 示例 | 设置页：`openSettings()` / `closeSettings()` 同时写窗口状态与 `dialog.open` |
+
+**GitDesk 规避：** 去掉单向绑定，改用 `openSettings()` / `closeSettings()` 双写，并在 `onOpenChanged` 回写窗口状态。
+
+### 4.7 欢迎页 / 子页通过 `Window.window` 写壳层属性（新）
+
+**现象：** 子组件内 `Window.window.settingsOpen = true` 难调试；用函数 `w.openCloneDialog()` 相对稳，但仍不如信号清晰。
+
+**改进建议：**
+
+- 文档推荐：子组件用 **signal** 冒泡（`settingsRequested`），由 `ApplicationWindow` 统一打开对话框
+- Gallery：欢迎页 CTA 打开 FullscreenDialog 的官方片段
+
+### 4.8 `aboutContent` 与 About 对话框固定高度（新）
+
+**现象：** About 对话框默认高度偏小；长 `aboutContent`（changelog）易被裁切，需内容侧自带 `Flickable`。
+
+**改进建议：** About 默认加滚动；或暴露 `aboutDialogHeight`；文档注明长内容必须可滚。
+
+### 4.9 `Md3DropDownButton`：主按钮只开菜单，无「默认动作」（新）
+
+**现象（GitDesk 顶栏「拉取」）：** 想要「点一下 = ff-only Pull，下拉选 rebase」时，组件只有 `onClicked → toggleMenu()`，没有 `defaultAction` / `onPrimaryClicked`。
+
+**改进建议：**
+
+| 项 | 建议 |
+|----|------|
+| API | `signal primaryClicked` + `property bool menuOnly: true`（默认兼容）；或 `split: true` 主区动作 / 箭头开菜单 |
+| 文档 | 工具栏「带默认动作的下拉」选用表：DropDown vs MenuButton vs 两个 AppBarButton |
+| 示例 | IDE 工具栏：Fetch / Pull(split) / Push |
+
+**GitDesk 规避：** 用 DropDown 两项菜单（ff-only / --rebase）；命令面板再暴露同名命令。
+
+### 4.10 危险操作确认：`Md3Dialog` 文案动态化（新）
+
+**现象：** Reset Soft / Mixed / Hard 共用一个对话框，靠外部 `pendingResetMode` 改 `text`。可行，但易漏 `confirmTone`（Hard 应更醒目）。
+
+**改进建议：** 文档给「危险分级确认」片段：`confirmTone` × Soft/Hard；或 `Md3ConfirmDanger` 预设。
+
+### 4.11 长列表塞进 SideSheet（Blame / 文件历史）（新）
+
+**现象：** Blame 最多 2000 行用 `Repeater` + `Md3ListTile` 塞进 SideSheet 滚动区，首开卡顿、滚动卡顿。
+
+**改进建议：**
+
+- Gallery：SideSheet 内 `ListView` / `Md3VirtualList`（若有）官方片段
+- 文档警告：SideSheet 内容区禁止大 `Repeater`；超过 N 行改虚拟列表
+- API：SideSheet `content` 默认可滚时注明与内层 ListView 嵌套滚动冲突
+
+**GitDesk 规避：** Blame 上限 2000；后续应改 `ListView`。
+
 ---
 
 ## 5. 文档与发现性
@@ -190,10 +261,13 @@ GitDesk 不用 destinations，而是：
 | 缺口 | 建议 |
 |------|------|
 | 布局「反模式」少 | 增加「会导致重叠的 5 个写法」 |
-| IDE 壳无例少 | 见 4.2 |
+| IDE 壳用例少 | 见 4.2 |
 | 属性同义名 | EmptyState / Icon 等 |
 | 性能页与壳层交叉 | `md3PageActive`、TreeView unload 与自定义壳共存说明 |
 | 控件选用表 | design-guidelines 很好；请链到 layout 反模式 |
+| **对话框状态同步** | FullscreenDialog / Dialog 与外部 `open` 绑定的正确写法（见 4.6） |
+| **工具栏下拉** | DropDown「仅菜单」vs「主动作+菜单」选型（见 4.9） |
+| **SideSheet 大数据** | Blame / log 类长列表禁用 Repeater（见 4.11） |
 
 建议目录：
 
@@ -202,6 +276,7 @@ docs/guides/
   layout.md              # 已有 → 加强反模式
   ide-shell.md           # 新增
   layout-antipatterns.md # 新增（可与 layout 合并）
+  dialogs-and-open.md    # 新增：open 绑定 / Binding / 强制同步
 ```
 
 ---
@@ -214,20 +289,25 @@ docs/guides/
 2. EmptyState：`description` 别名
 3. ScrollView：可选不强制 `contentHeight ≥ viewport`
 4. IDE 壳 + 侧栏「头固定 + 下滚动」官方片段
+5. **FullscreenDialog：勿在 accept 中打断外部 `open` 绑定（或文档强制同步写法）**
 
 ### P1 — 更好用
 
-5. SplitView 可折叠 / SideSheet 选型表  
-6. TabBar `fillHeight` 或 IDE pageHost 模式文档  
-7. Divider 垂直  
-8. FullscreenDialog `contentMargins`  
-9. `Md3TextArea` 别名  
+6. SplitView 可折叠 / SideSheet 选型表  
+7. TabBar `fillHeight` 或 IDE pageHost 模式文档  
+8. Divider 垂直  
+9. FullscreenDialog `contentMargins`  
+10. `Md3TextArea` 别名  
+11. About 对话框可滚 / 可调高  
+12. DropDownButton split / primaryClicked（工具栏默认动作）  
+13. SideSheet + VirtualList 官方片段（Blame / 长历史）  
 
-### P2 — 体验
+### P2 — 提升
 
-10. qmllint / 静态检查布局契约  
-11. `Md3SplitPane` 声明式 API  
-12. 设置页 / IDE shell 示例工程进 examples  
+14. qmllint / 静态检查布局契约  
+15. `Md3SplitPane` 声明式 API  
+16. 设置页 / IDE shell 示例工程进 examples  
+17. 危险确认对话框分级预设（Reset Hard 等） 
 
 ---
 
@@ -237,12 +317,35 @@ docs/guides/
 |------|------|
 | 三栏 Split 关不掉 | 详情改 `Md3SideSheet` |
 | Split 子项锚点冲突 | 子项不用 `anchors.fill`；内层 Item 再填满 |
-| 侧栏黑块 | 去掉 ScrollView `expand`；header anchors + 剩余区 Scroll |
+| 侧栏 / Changes 叠压或大片留白 | 去掉 ScrollView `expand`；**header + Scroll + sticky footer** |
 | 分支列表绑定不稳 | `localBranchNames`（`QVariantList`） |
 | 设置页不宽 | 去掉 `maxWidth: 720`，`width: scroller.width` |
 | 空状态加载失败 | `description` → `body` |
+| 设置第二次打不开 | `openSettings()` / `closeSettings()` 双写；欢迎页 `settingsRequested` |
+| Tab 工作区高度为 0 | 不用 `VStack expand` 包 pageHost；TabBar + anchors 填满剩余 |
+| Pull 要默认动作 + rebase | DropDown 两项菜单；命令面板同步暴露 |
+| Reset Hard 误触 | 共用确认框 + 文案按 mode 切换；Hard 用 Error tone |
+| Blame 塞 SideSheet | 上限截断；后续改 ListView |
 
 这些规避说明：**库缺的是契约与模板，不是能力本身。**
+
+### 7.1 推荐片段：侧栏 / 变更页「三段式」
+
+```qml
+Item { // SplitView 的直接子项：不要 anchors.fill
+    Item { id: header; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: … }
+    Item { id: footer; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: … }
+    Md3ScrollView {
+        anchors.top: header.bottom
+        anchors.bottom: footer.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        // 不要 property bool expand: true
+    }
+}
+```
+
+建议库 Gallery 直接收录（标题：「IDE 侧栏三段式」）。
 
 ---
 
@@ -254,14 +357,35 @@ docs/guides/
 2. Split / Scroll / VStack 组合在文档中有明确允许矩阵  
 3. 常见别名（`description` / `color` / TextArea）不导致整页 `Type unavailable`  
 4. 侧栏、设置全宽、可折叠详情均有可复制片段，无需读组件源码猜高度策略  
+5. **FullscreenDialog / 设置页可反复打开关闭，无需应用侧记忆「双写 open」**  
+6. **工具栏下拉可「一点默认动作 / 箭头开菜单」**，无需拆成两个按钮或纯菜单  
+7. **SideSheet 内万级行列表有官方虚拟列表模板**，不靠 Repeater 硬撑  
 
 ---
 
-## 9. 修订记录
+## 9. GitDesk 0.3.0 消费方观察（强操作 UI）
+
+以下不是 Md3 缺陷，而是 IDE 类 Git 客户端叠在壳上时的组合经验，供 Gallery / 示例选型参考：
+
+| 场景 | 做法 | 对库的启示 |
+|------|------|------------|
+| 冲突横幅 | Changes 顶栏 `errorContainer` + 中止/继续 | 需要「页面内持久 banner」模式，不只 Snackbar |
+| Rebase / Merge 双态 | 同一条横幅按 `rebaseInProgress` 切换文案与按钮 | 状态机文案模板可进 design-guidelines |
+| ours / theirs | ListTile trailing 两个 IconButton + 详情面板双按钮 | 列表行「双危险动作」密度指南 |
+| 分支对比结果 | 写入 SideSheet 卡片 + 提交列表可点选 | SideSheet 适合「操作结果面板」，不止「当前选中」 |
+| 命令面板镜像 | 每个顶栏/危险操作在 CommandPalette 再挂一份 | 文档：CommandPalette 与 ToolBar 命令同源清单 |
+
+建议在 `ide-shell.md` 增加小节「异步任务 + 忙碌锁 + toast」与「确认对话框挂在 ApplicationWindow」两小节（GitDesk 全部确认挂在 `Main.qml`）。
+
+---
+
+## 10. 修订记录
 
 | 日期 | 说明 |
 |------|------|
 | 2026-08-03 | 初稿：基于 GitDesk 0.1 接入 Md3 v1.1.x 的实作反馈 |
+| 2026-08-03 | 增补：FullscreenDialog `open` 绑定打断、欢迎页信号、About 高度、三段式侧栏、设置二次打开 |
+| 2026-08-03 | 增补（0.3.0）：DropDown 无默认动作、危险确认分级、SideSheet Blame 大列表、强操作 UI 观察、优先级与规避表同步 |
 
 ---
 

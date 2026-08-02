@@ -65,6 +65,7 @@ void GitRepository::close()
     m_changes.clear();
     m_branches.clear();
     m_remotes.clear();
+    m_remoteDetails.clear();
     m_tags.clear();
     m_projectTree.clear();
     m_recentActivity.clear();
@@ -73,6 +74,8 @@ void GitRepository::close()
     m_ahead = 0;
     m_behind = 0;
     m_hasUpstream = false;
+    m_mergeInProgress = false;
+    m_rebaseInProgress = false;
     emit changed();
 }
 
@@ -92,6 +95,10 @@ bool GitRepository::refresh(QString *error)
         return false;
     loadStashes(error);
     loadAheadBehind(error);
+    const QDir gitDir(QDir(m_path).filePath(QStringLiteral(".git")));
+    m_mergeInProgress = QFileInfo::exists(gitDir.filePath(QStringLiteral("MERGE_HEAD")));
+    m_rebaseInProgress = QFileInfo::exists(gitDir.filePath(QStringLiteral("rebase-merge")))
+                         || QFileInfo::exists(gitDir.filePath(QStringLiteral("rebase-apply")));
     loadStats(error);
     buildProjectTree();
     emit changed();
@@ -304,10 +311,30 @@ bool GitRepository::loadRemotesTags(QString *error)
 {
     QString out;
     m_remotes.clear();
-    if (runOk({QStringLiteral("remote")}, error, &out)) {
-        m_remotes = out.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-        for (QString &r : m_remotes)
-            r = r.trimmed();
+    m_remoteDetails.clear();
+    if (runOk({QStringLiteral("remote"), QStringLiteral("-v")}, error, &out)) {
+        QSet<QString> seen;
+        const QStringList lines = out.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            // origin  https://... (fetch)
+            const QString trimmed = line.trimmed();
+            if (!trimmed.contains(QLatin1String("(fetch)")))
+                continue;
+            const QStringList parts = trimmed.split(QRegularExpression(QStringLiteral("\\s+")),
+                                                    Qt::SkipEmptyParts);
+            if (parts.size() < 2)
+                continue;
+            const QString name = parts[0];
+            const QString url = parts[1];
+            if (seen.contains(name))
+                continue;
+            seen.insert(name);
+            m_remotes << name;
+            QVariantMap entry;
+            entry.insert(QStringLiteral("name"), name);
+            entry.insert(QStringLiteral("url"), url);
+            m_remoteDetails.push_back(entry);
+        }
     }
 
     m_tags.clear();
@@ -332,6 +359,15 @@ bool GitRepository::loadStats(QString *error)
     }
     m_stats.tagCount = m_tags.size();
     m_stats.changedFileCount = m_changes.size();
+    m_stats.conflictCount = 0;
+    for (const FileChange &c : m_changes) {
+        if (c.status == QLatin1String("U") || c.status == QLatin1String("AA")
+            || c.status == QLatin1String("DD") || c.status == QLatin1String("AU")
+            || c.status == QLatin1String("UA") || c.status == QLatin1String("DU")
+            || c.status == QLatin1String("UD")) {
+            ++m_stats.conflictCount;
+        }
+    }
 
     QString out;
     if (runOk({QStringLiteral("rev-list"), QStringLiteral("--count"), QStringLiteral("--all")}, error, &out))
@@ -492,6 +528,133 @@ CommitInfo GitRepository::commitById(const QString &id) const
     return {};
 }
 
+QVariantList GitRepository::fileHistory(const QString &path, int limit) const
+{
+    QVariantList out;
+    if (m_path.isEmpty() || path.trimmed().isEmpty())
+        return out;
+    const int n = qBound(1, limit, 100);
+    QString raw;
+    if (!runOk({QStringLiteral("log"),
+                QStringLiteral("--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%at"),
+                QStringLiteral("-n"), QString::number(n),
+                QStringLiteral("--"), path.trimmed()},
+               nullptr, &raw)) {
+        return out;
+    }
+    const QStringList lines = raw.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QStringList f = line.split(QChar(0x1f));
+        if (f.size() < 5)
+            continue;
+        QVariantMap row;
+        row.insert(QStringLiteral("id"), f[0]);
+        row.insert(QStringLiteral("shortId"), f[1]);
+        row.insert(QStringLiteral("subject"), f[2]);
+        row.insert(QStringLiteral("author"), f[3]);
+        row.insert(QStringLiteral("date"),
+                   QDateTime::fromSecsSinceEpoch(f[4].toLongLong()).toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        out.push_back(row);
+    }
+    return out;
+}
+
+QVariantList GitRepository::fileBlame(const QString &path) const
+{
+    QVariantList out;
+    if (m_path.isEmpty() || path.trimmed().isEmpty())
+        return out;
+    QString raw;
+    // porcelain: hash author ... then \tline
+    if (!runOk({QStringLiteral("blame"), QStringLiteral("--porcelain"),
+                QStringLiteral("--"), path.trimmed()},
+               nullptr, &raw)) {
+        return out;
+    }
+    const QStringList lines = raw.split(QLatin1Char('\n'));
+    QString curHash;
+    QString curAuthor;
+    QString curDate;
+    for (const QString &line : lines) {
+        if (line.startsWith(QLatin1Char('\t'))) {
+            QVariantMap row;
+            row.insert(QStringLiteral("shortId"), curHash.left(7));
+            row.insert(QStringLiteral("author"), curAuthor);
+            row.insert(QStringLiteral("date"), curDate);
+            row.insert(QStringLiteral("text"), line.mid(1));
+            out.push_back(row);
+            if (out.size() >= 2000)
+                break;
+            continue;
+        }
+        if (line.startsWith(QLatin1String("author "))) {
+            curAuthor = line.mid(7);
+            continue;
+        }
+        if (line.startsWith(QLatin1String("author-time "))) {
+            curDate = QDateTime::fromSecsSinceEpoch(line.mid(12).toLongLong())
+                          .toString(QStringLiteral("yyyy-MM-dd"));
+            continue;
+        }
+        // header line: <40-hex> <orig> <final> [<num>]
+        if (line.size() >= 40 && line[0].isLetterOrNumber()) {
+            const QStringList parts = line.split(QLatin1Char(' '));
+            if (!parts.isEmpty() && parts[0].size() >= 7)
+                curHash = parts[0];
+        }
+    }
+    return out;
+}
+
+QVariantMap GitRepository::compareRefs(const QString &baseRef, const QString &headRef, int limit) const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("ahead"), 0);
+    result.insert(QStringLiteral("behind"), 0);
+    result.insert(QStringLiteral("commits"), QVariantList{});
+    if (m_path.isEmpty() || baseRef.trimmed().isEmpty() || headRef.trimmed().isEmpty())
+        return result;
+
+    QString counts;
+    const QString range = baseRef.trimmed() + QLatin1String("...") + headRef.trimmed();
+    if (runOk({QStringLiteral("rev-list"), QStringLiteral("--left-right"),
+               QStringLiteral("--count"), range},
+              nullptr, &counts)) {
+        const QStringList parts = counts.trimmed().split(QRegularExpression(QStringLiteral("[\\s\\t]+")),
+                                                         Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            result.insert(QStringLiteral("behind"), parts[0].toInt()); // only in base
+            result.insert(QStringLiteral("ahead"), parts[1].toInt());  // only in head
+        }
+    }
+
+    QString raw;
+    const int n = qBound(1, limit, 80);
+    if (runOk({QStringLiteral("log"),
+               QStringLiteral("--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%at"),
+               QStringLiteral("-n"), QString::number(n),
+               headRef.trimmed(), QLatin1String("^") + baseRef.trimmed()},
+              nullptr, &raw)) {
+        QVariantList commits;
+        for (const QString &line : raw.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+            const QStringList f = line.split(QChar(0x1f));
+            if (f.size() < 5)
+                continue;
+            QVariantMap row;
+            row.insert(QStringLiteral("id"), f[0]);
+            row.insert(QStringLiteral("shortId"), f[1]);
+            row.insert(QStringLiteral("subject"), f[2]);
+            row.insert(QStringLiteral("author"), f[3]);
+            row.insert(QStringLiteral("date"),
+                       QDateTime::fromSecsSinceEpoch(f[4].toLongLong())
+                           .toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+            commits.push_back(row);
+        }
+        result.insert(QStringLiteral("commits"), commits);
+    }
+    return result;
+}
+
 bool GitRepository::stage(const QString &path, QString *error)
 {
     return runOk({QStringLiteral("add"), QStringLiteral("--"), path}, error) && refresh(error);
@@ -590,6 +753,17 @@ bool GitRepository::createBranch(const QString &name, QString *error)
     return runOk({QStringLiteral("branch"), name}, error) && refresh(error);
 }
 
+bool GitRepository::createBranchAt(const QString &name, const QString &startPoint, QString *error)
+{
+    if (name.trimmed().isEmpty() || startPoint.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Branch name and start point required");
+        return false;
+    }
+    return runOk({QStringLiteral("branch"), name.trimmed(), startPoint.trimmed()}, error)
+           && refresh(error);
+}
+
 bool GitRepository::deleteBranch(const QString &name, bool force, QString *error)
 {
     return runOk({QStringLiteral("branch"),
@@ -604,6 +778,46 @@ bool GitRepository::merge(const QString &branch, QString *error)
     return runOk({QStringLiteral("merge"), QStringLiteral("--no-edit"), branch}, error) && refresh(error);
 }
 
+bool GitRepository::revertCommit(const QString &commitId, QString *error)
+{
+    if (commitId.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Commit id required");
+        return false;
+    }
+    return runOk({QStringLiteral("revert"), QStringLiteral("--no-edit"), commitId.trimmed()}, error)
+           && refresh(error);
+}
+
+bool GitRepository::cherryPick(const QString &commitId, QString *error)
+{
+    if (commitId.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Commit id required");
+        return false;
+    }
+    return runOk({QStringLiteral("cherry-pick"), QStringLiteral("--ff"), commitId.trimmed()}, error)
+           && refresh(error);
+}
+
+bool GitRepository::resetTo(const QString &commitId, const QString &mode, QString *error)
+{
+    if (commitId.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Commit id required");
+        return false;
+    }
+    QString flag = QStringLiteral("--mixed");
+    const QString m = mode.trimmed().toLower();
+    if (m == QLatin1String("soft"))
+        flag = QStringLiteral("--soft");
+    else if (m == QLatin1String("hard"))
+        flag = QStringLiteral("--hard");
+    else
+        flag = QStringLiteral("--mixed");
+    return runOk({QStringLiteral("reset"), flag, commitId.trimmed()}, error) && refresh(error);
+}
+
 bool GitRepository::fetch(QString *error)
 {
     return runOk({QStringLiteral("fetch"), QStringLiteral("--all"), QStringLiteral("--prune")}, error, nullptr)
@@ -613,6 +827,12 @@ bool GitRepository::fetch(QString *error)
 bool GitRepository::pull(QString *error)
 {
     return runOk({QStringLiteral("pull"), QStringLiteral("--ff-only")}, error) && refresh(error);
+}
+
+bool GitRepository::pullRebase(QString *error)
+{
+    return runOk({QStringLiteral("pull"), QStringLiteral("--rebase"), QStringLiteral("--autostash")}, error)
+           && refresh(error);
 }
 
 bool GitRepository::push(QString *error)
@@ -714,4 +934,40 @@ bool GitRepository::initRepo(const QString &path, QString *error)
         return false;
     }
     return open(cleaned, error);
+}
+
+bool GitRepository::abortMerge(QString *error)
+{
+    if (!m_mergeInProgress && !QFileInfo::exists(QDir(m_path).filePath(QStringLiteral(".git/MERGE_HEAD")))) {
+        if (error)
+            *error = QStringLiteral("No merge in progress");
+        return false;
+    }
+    return runOk({QStringLiteral("merge"), QStringLiteral("--abort")}, error) && refresh(error);
+}
+
+bool GitRepository::abortRebase(QString *error)
+{
+    return runOk({QStringLiteral("rebase"), QStringLiteral("--abort")}, error) && refresh(error);
+}
+
+bool GitRepository::continueRebase(QString *error)
+{
+    return runOk({QStringLiteral("rebase"), QStringLiteral("--continue")}, error) && refresh(error);
+}
+
+bool GitRepository::resolveConflict(const QString &path, const QString &side, QString *error)
+{
+    if (path.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Path required");
+        return false;
+    }
+    const QString s = side.trimmed().toLower();
+    const QString which = (s == QLatin1String("theirs"))
+                              ? QStringLiteral("--theirs")
+                              : QStringLiteral("--ours");
+    if (!runOk({QStringLiteral("checkout"), which, QStringLiteral("--"), path.trimmed()}, error))
+        return false;
+    return runOk({QStringLiteral("add"), QStringLiteral("--"), path.trimmed()}, error) && refresh(error);
 }

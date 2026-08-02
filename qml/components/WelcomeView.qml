@@ -6,6 +6,9 @@ import GitDesk
 Item {
     id: root
 
+    signal settingsRequested()
+    signal cloneRequested()
+
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
@@ -55,11 +58,7 @@ Item {
                 text: qsTr("克隆仓库")
                 icon: "cloud_download"
                 variant: Md3Button.Outlined
-                onClicked: {
-                    const w = Window.window
-                    if (w && w.openCloneDialog)
-                        w.openCloneDialog()
-                }
+                onClicked: root.cloneRequested()
             }
             Md3Button {
                 text: qsTr("初始化仓库")
@@ -71,11 +70,7 @@ Item {
                 text: qsTr("设置")
                 icon: "settings"
                 variant: Md3Button.Outlined
-                onClicked: {
-                    const w = Window.window
-                    if (w)
-                        w.settingsOpen = true
-                }
+                onClicked: root.settingsRequested()
             }
         }
 

@@ -59,6 +59,62 @@ Item {
                         }
                     }
 
+                    Rectangle {
+                        width: parent.width
+                        height: conflictRow.implicitHeight + 12
+                        visible: GitDeskApp.conflictCount > 0
+                                 || GitDeskApp.mergeInProgress
+                                 || GitDeskApp.rebaseInProgress
+                        radius: Md3Theme.shape.small
+                        color: Md3Theme.colorScheme.errorContainer
+
+                        Md3HStack {
+                            id: conflictRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.margins: 8
+                            spacing: Md3Theme.spacingSm
+                            Md3Text {
+                                text: {
+                                    if (GitDeskApp.rebaseInProgress)
+                                        return qsTr("Rebase 进行中 · %1 个冲突")
+                                            .arg(GitDeskApp.conflictCount)
+                                    if (GitDeskApp.mergeInProgress)
+                                        return qsTr("合并进行中 · %1 个冲突")
+                                            .arg(GitDeskApp.conflictCount)
+                                    return qsTr("%1 个冲突文件").arg(GitDeskApp.conflictCount)
+                                }
+                                role: Md3Text.LabelMedium
+                                tone: Md3Text.Custom
+                                customColor: Md3Theme.colorScheme.colorOnErrorContainer
+                                width: Math.max(80, parent.width - 220)
+                                wrapMode: Text.Wrap
+                            }
+                            Md3Spacer { expand: true }
+                            Md3Button {
+                                visible: GitDeskApp.rebaseInProgress
+                                text: qsTr("继续")
+                                variant: Md3Button.Text
+                                enabled: !GitDeskApp.busy
+                                onClicked: GitDeskApp.continueRebase()
+                            }
+                            Md3Button {
+                                visible: GitDeskApp.rebaseInProgress
+                                text: qsTr("中止")
+                                variant: Md3Button.Text
+                                enabled: !GitDeskApp.busy
+                                onClicked: GitDeskApp.abortRebase()
+                            }
+                            Md3Button {
+                                visible: GitDeskApp.mergeInProgress && !GitDeskApp.rebaseInProgress
+                                text: qsTr("中止")
+                                variant: Md3Button.Text
+                                onClicked: GitDeskApp.abortMerge()
+                            }
+                        }
+                    }
+
                     Md3HStack {
                         width: parent.width
                         spacing: Md3Theme.spacingSm
@@ -159,6 +215,18 @@ Item {
                                     onClicked: GitDeskApp.selectChange(path, false)
                                     trailing: Md3HStack {
                                         spacing: 0
+                                        Md3IconButton {
+                                            visible: status === "U"
+                                            icon: "call_merge"
+                                            accessibleName: qsTr("采用我们的")
+                                            onClicked: GitDeskApp.resolveConflict(path, "ours")
+                                        }
+                                        Md3IconButton {
+                                            visible: status === "U"
+                                            icon: "call_split"
+                                            accessibleName: qsTr("采用他们的")
+                                            onClicked: GitDeskApp.resolveConflict(path, "theirs")
+                                        }
                                         Md3IconButton {
                                             icon: "add"
                                             onClicked: GitDeskApp.stageFile(path)

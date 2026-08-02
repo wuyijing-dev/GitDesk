@@ -1,9 +1,11 @@
 #include "GitDeskApp.h"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QSettings>
 #include <QFileInfo>
+#include <QUrl>
 #include <QtConcurrent>
 #include <QMetaObject>
 #include <QMutexLocker>
@@ -179,6 +181,7 @@ void GitDeskApp::syncModels()
     m_cachedRemotes.clear();
     for (const QString &r : m_repo.remotes())
         m_cachedRemotes.push_back(r);
+    m_cachedRemoteDetails = m_repo.remoteDetails();
 
     m_cachedTags.clear();
     for (const QString &t : m_repo.tags())
@@ -190,6 +193,8 @@ void GitDeskApp::syncModels()
     m_cachedAhead = m_repo.ahead();
     m_cachedBehind = m_repo.behind();
     m_cachedHasUpstream = m_repo.hasUpstream();
+    m_cachedMergeInProgress = m_repo.mergeInProgress();
+    m_cachedRebaseInProgress = m_repo.rebaseInProgress();
 
     m_cachedLocalBranches.clear();
     for (const BranchInfo &b : m_repo.branches()) {
@@ -291,20 +296,28 @@ void GitDeskApp::updateDiffAsync()
         emit diffLoadingChanged();
     }
 
-    (void)QtConcurrent::run([this, token, filePath, staged, commitId]() {
+    (void)QtConcurrent::run([this, token, filePath, staged, commitId, wantBlame = m_showBlame]() {
         QString diff;
+        QVariantList history;
+        QVariantList blame;
         {
             QMutexLocker lock(&m_repoMutex);
-            if (!filePath.isEmpty())
+            if (!filePath.isEmpty()) {
                 diff = m_repo.fileDiff(filePath, staged);
-            else if (!commitId.isEmpty())
+                history = m_repo.fileHistory(filePath, 25);
+                if (wantBlame)
+                    blame = m_repo.fileBlame(filePath);
+            } else if (!commitId.isEmpty()) {
                 diff = m_repo.commitDiff(commitId);
+            }
         }
 
-        QMetaObject::invokeMethod(this, [this, token, diff]() {
+        QMetaObject::invokeMethod(this, [this, token, diff, history, blame]() {
             if (token != m_diffToken)
                 return;
             m_currentDiff = diff;
+            m_cachedFileHistory = history;
+            m_cachedFileBlame = blame;
             m_diffLoading = false;
             emit diffLoadingChanged();
             emit selectionChanged();
@@ -407,6 +420,7 @@ void GitDeskApp::closeRepository()
     m_cachedHeadShort.clear();
     m_cachedStats = {};
     m_cachedRemotes.clear();
+    m_cachedRemoteDetails.clear();
     m_cachedTags.clear();
     m_cachedProjectTree.clear();
     m_cachedRecentActivity.clear();
@@ -416,6 +430,13 @@ void GitDeskApp::closeRepository()
     m_cachedAhead = 0;
     m_cachedBehind = 0;
     m_cachedHasUpstream = false;
+    m_cachedMergeInProgress = false;
+    m_cachedRebaseInProgress = false;
+    m_cachedFileHistory.clear();
+    m_cachedFileBlame.clear();
+    m_cachedBranchCompare.clear();
+    m_pendingBranchCompare.clear();
+    m_showBlame = false;
     m_commits->clear();
     m_changes->clear();
     m_branches->clear();
@@ -426,6 +447,8 @@ void GitDeskApp::closeRepository()
     m_diffLoading = false;
     setStatus(tr("No repository open"));
     emit diffLoadingChanged();
+    emit showBlameChanged();
+    emit branchCompareChanged();
     emit repoChanged();
     emit selectionChanged();
 }
@@ -464,6 +487,18 @@ void GitDeskApp::pull()
             return error.isEmpty() ? tr("Pull 失败") : error;
         return QString();
     }, tr("Pull 完成"));
+}
+
+void GitDeskApp::pullRebase()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("正在 Pull --rebase…"), [this]() {
+        QString error;
+        if (!m_repo.pullRebase(&error))
+            return error.isEmpty() ? tr("Pull --rebase 失败") : error;
+        return QString();
+    }, tr("Pull --rebase 完成"));
 }
 
 void GitDeskApp::push()
@@ -652,6 +687,18 @@ void GitDeskApp::createBranch(const QString &name)
     }, tr("已创建 %1").arg(name));
 }
 
+void GitDeskApp::createBranchAt(const QString &name, const QString &startPoint)
+{
+    if (!m_repo.isOpen() || name.trimmed().isEmpty() || startPoint.trimmed().isEmpty())
+        return;
+    runAsync(tr("创建分支…"), [this, name, startPoint]() {
+        QString error;
+        if (!m_repo.createBranchAt(name, startPoint, &error))
+            return error.isEmpty() ? tr("创建失败") : error;
+        return QString();
+    }, tr("已创建 %1").arg(name.trimmed()));
+}
+
 void GitDeskApp::deleteBranch(const QString &name, bool force)
 {
     if (!m_repo.isOpen() || name.isEmpty())
@@ -674,6 +721,43 @@ void GitDeskApp::mergeBranch(const QString &name)
             return error.isEmpty() ? tr("Merge 失败") : error;
         return QString();
     }, tr("已合并 %1").arg(name));
+}
+
+void GitDeskApp::revertCommit(const QString &commitId)
+{
+    if (!m_repo.isOpen() || commitId.trimmed().isEmpty())
+        return;
+    runAsync(tr("Revert…"), [this, commitId]() {
+        QString error;
+        if (!m_repo.revertCommit(commitId, &error))
+            return error.isEmpty() ? tr("Revert 失败") : error;
+        return QString();
+    }, tr("已 Revert %1").arg(commitId.left(7)));
+}
+
+void GitDeskApp::cherryPickCommit(const QString &commitId)
+{
+    if (!m_repo.isOpen() || commitId.trimmed().isEmpty())
+        return;
+    runAsync(tr("Cherry-pick…"), [this, commitId]() {
+        QString error;
+        if (!m_repo.cherryPick(commitId, &error))
+            return error.isEmpty() ? tr("Cherry-pick 失败") : error;
+        return QString();
+    }, tr("已 Cherry-pick %1").arg(commitId.left(7)));
+}
+
+void GitDeskApp::resetToCommit(const QString &commitId, const QString &mode)
+{
+    if (!m_repo.isOpen() || commitId.trimmed().isEmpty())
+        return;
+    const QString m = mode.trimmed().isEmpty() ? QStringLiteral("mixed") : mode.trimmed();
+    runAsync(tr("Reset…"), [this, commitId, m]() {
+        QString error;
+        if (!m_repo.resetTo(commitId, m, &error))
+            return error.isEmpty() ? tr("Reset 失败") : error;
+        return QString();
+    }, tr("已 Reset (%1) 到 %2").arg(m, commitId.left(7)));
 }
 
 void GitDeskApp::createTag(const QString &name, const QString &message)
@@ -762,6 +846,122 @@ QString GitDeskApp::pickAndInitRepository()
         return {};
     initRepository(dir);
     return dir;
+}
+
+void GitDeskApp::openRepoFolder()
+{
+    if (!m_hasRepo || m_cachedPath.isEmpty()) {
+        emit notify(tr("当前未打开仓库"), QStringLiteral("error"));
+        return;
+    }
+    const QUrl url = QUrl::fromLocalFile(m_cachedPath);
+    if (!QDesktopServices::openUrl(url))
+        emit notify(tr("无法打开文件夹"), QStringLiteral("error"));
+}
+
+void GitDeskApp::openRemoteUrl(const QString &url)
+{
+    QString u = url.trimmed();
+    if (u.isEmpty()) {
+        emit notify(tr("远程 URL 为空"), QStringLiteral("error"));
+        return;
+    }
+    // git@host:path.git → https://host/path
+    if (u.startsWith(QLatin1String("git@"))) {
+        u = u.mid(4);
+        const int colon = u.indexOf(QLatin1Char(':'));
+        if (colon > 0) {
+            const QString host = u.left(colon);
+            QString path = u.mid(colon + 1);
+            if (path.endsWith(QLatin1String(".git")))
+                path.chop(4);
+            u = QStringLiteral("https://%1/%2").arg(host, path);
+        }
+    } else if (u.startsWith(QLatin1String("ssh://"))) {
+        u.replace(QLatin1String("ssh://git@"), QLatin1String("https://"));
+        u.replace(QLatin1String("ssh://"), QLatin1String("https://"));
+        if (u.endsWith(QLatin1String(".git")))
+            u.chop(4);
+    }
+    if (!QDesktopServices::openUrl(QUrl(u)))
+        emit notify(tr("无法打开远程链接"), QStringLiteral("error"));
+}
+
+void GitDeskApp::abortMerge()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("中止合并…"), [this]() {
+        QString error;
+        if (!m_repo.abortMerge(&error))
+            return error.isEmpty() ? tr("中止合并失败") : error;
+        return QString();
+    }, tr("已中止合并"));
+}
+
+void GitDeskApp::abortRebase()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("中止 Rebase…"), [this]() {
+        QString error;
+        if (!m_repo.abortRebase(&error))
+            return error.isEmpty() ? tr("中止 Rebase 失败") : error;
+        return QString();
+    }, tr("已中止 Rebase"));
+}
+
+void GitDeskApp::continueRebase()
+{
+    if (!m_repo.isOpen())
+        return;
+    runAsync(tr("继续 Rebase…"), [this]() {
+        QString error;
+        if (!m_repo.continueRebase(&error))
+            return error.isEmpty() ? tr("继续 Rebase 失败") : error;
+        return QString();
+    }, tr("Rebase 已继续"));
+}
+
+void GitDeskApp::resolveConflict(const QString &path, const QString &side)
+{
+    if (!m_repo.isOpen() || path.trimmed().isEmpty())
+        return;
+    runAsync(tr("解决冲突…"), [this, path, side]() {
+        QString error;
+        if (!m_repo.resolveConflict(path, side, &error))
+            return error.isEmpty() ? tr("解决冲突失败") : error;
+        return QString();
+    }, tr("已采用 %1：%2").arg(side, path));
+}
+
+void GitDeskApp::compareBranches(const QString &baseRef, const QString &headRef)
+{
+    if (!m_repo.isOpen() || baseRef.trimmed().isEmpty() || headRef.trimmed().isEmpty())
+        return;
+    const QString base = baseRef.trimmed();
+    const QString head = headRef.trimmed();
+    runAsync(tr("对比分支…"), [this, base, head]() {
+        // runAsync already holds m_repoMutex
+        m_pendingBranchCompare = m_repo.compareRefs(base, head, 40);
+        return QString();
+    }, tr("分支对比完成"), [this, base, head]() {
+        m_cachedBranchCompare = m_pendingBranchCompare;
+        m_cachedBranchCompare.insert(QStringLiteral("base"), base);
+        m_cachedBranchCompare.insert(QStringLiteral("head"), head);
+        emit branchCompareChanged();
+        setDetailOpen(true);
+    });
+}
+
+void GitDeskApp::setShowBlame(bool on)
+{
+    if (m_showBlame == on)
+        return;
+    m_showBlame = on;
+    emit showBlameChanged();
+    if (!m_selectedFilePath.isEmpty())
+        updateDiffAsync();
 }
 
 void GitDeskApp::selectChange(const QString &path, bool staged)
